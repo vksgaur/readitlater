@@ -91,8 +91,14 @@ const Reader = {
                 <div class="reader-content-wrapper">
                     <div class="reader-content" id="readerContent">
                         <div class="reader-article" id="readerArticle">
-                            <!-- Input Container (shown when no content) -->
-                            <div class="reader-input-container" id="readerInputContainer">
+                            <!-- Loading State -->
+                            <div class="reader-loading" id="readerLoading" style="display: none;">
+                                <div class="loading-spinner"></div>
+                                <p>Fetching article content...</p>
+                            </div>
+                            
+                            <!-- Input Container (shown when fetch fails) -->
+                            <div class="reader-input-container" id="readerInputContainer" style="display: none;">
                                 <div class="reader-input-icon">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -102,8 +108,8 @@ const Reader = {
                                         <polyline points="10 9 9 9 8 9"></polyline>
                                     </svg>
                                 </div>
-                                <h3 class="reader-input-title">Paste Article Content</h3>
-                                <p class="reader-input-subtitle">Copy and paste the article text below to start reading</p>
+                                <h3 class="reader-input-title">Couldn't fetch article</h3>
+                                <p class="reader-input-subtitle">Some websites block content extraction. You can paste the article text below:</p>
                                 <textarea class="reader-textarea" id="readerTextarea" placeholder="Paste your article text here..."></textarea>
                                 <button class="btn-start-reading" id="btnStartReading" disabled>Start Reading</button>
                             </div>
@@ -199,7 +205,8 @@ const Reader = {
             noteTextarea: document.getElementById('noteTextarea'),
             noteCloseBtn: document.getElementById('btnNoteClose'),
             noteCancelBtn: document.getElementById('btnNoteCancel'),
-            noteSaveBtn: document.getElementById('btnNoteSave')
+            noteSaveBtn: document.getElementById('btnNoteSave'),
+            loadingState: document.getElementById('readerLoading')
         };
     },
 
@@ -338,7 +345,7 @@ const Reader = {
         localStorage.setItem('reader_fontsize', size);
     },
 
-    open(article) {
+    async open(article) {
         this.currentArticle = article;
         this.highlights = article.highlights || [];
 
@@ -346,19 +353,146 @@ const Reader = {
         this.elements.articleTitle.textContent = article.title;
         this.elements.articleLink.href = article.url;
 
-        // Check if article has content
-        if (article.content && article.content.trim()) {
-            this.showArticleView(article.content);
-        } else {
-            this.showInputView();
-        }
-
         this.elements.overlay.classList.add('active');
         this.isOpen = true;
         document.body.style.overflow = 'hidden';
 
         this.updateHighlightCount();
         this.renderHighlightsList();
+
+        // Check if article already has content
+        if (article.content && article.content.trim()) {
+            this.showArticleView(article.content);
+        } else {
+            // Try to fetch content automatically
+            await this.fetchArticleContent(article.url);
+        }
+    },
+
+    async fetchArticleContent(url) {
+        this.showLoadingState();
+
+        try {
+            // Use allorigins.win as CORS proxy
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+
+            const response = await fetch(proxyUrl, {
+                timeout: 15000
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch');
+            }
+
+            const html = await response.text();
+
+            // Parse HTML and extract main content
+            const content = this.extractContent(html);
+
+            if (content && content.trim().length > 100) {
+                this.currentArticle.content = content;
+                this.saveArticle();
+                this.showArticleView(content);
+            } else {
+                throw new Error('Could not extract content');
+            }
+        } catch (error) {
+            console.log('Content fetch failed:', error.message);
+            this.showInputView();
+        }
+    },
+
+    extractContent(html) {
+        // Create a DOM parser
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        // Remove unwanted elements
+        const removeSelectors = [
+            'script', 'style', 'nav', 'header', 'footer', 'aside',
+            '.sidebar', '.nav', '.menu', '.advertisement', '.ads', '.ad',
+            '.social', '.share', '.comments', '.related', '.recommended',
+            '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
+            '.cookie', '.popup', '.modal', 'iframe', 'form'
+        ];
+
+        removeSelectors.forEach(selector => {
+            doc.querySelectorAll(selector).forEach(el => el.remove());
+        });
+
+        // Try to find main content using common selectors
+        const contentSelectors = [
+            'article',
+            '[role="main"]',
+            'main',
+            '.post-content',
+            '.article-content',
+            '.entry-content',
+            '.content',
+            '.post',
+            '.article-body',
+            '.story-body',
+            '#content',
+            '#main'
+        ];
+
+        let contentEl = null;
+        for (const selector of contentSelectors) {
+            contentEl = doc.querySelector(selector);
+            if (contentEl && contentEl.textContent.trim().length > 200) {
+                break;
+            }
+        }
+
+        // Fallback to body
+        if (!contentEl) {
+            contentEl = doc.body;
+        }
+
+        if (!contentEl) return '';
+
+        // Extract text content preserving paragraphs
+        const paragraphs = [];
+        const walker = doc.createTreeWalker(
+            contentEl,
+            NodeFilter.SHOW_ELEMENT,
+            {
+                acceptNode: (node) => {
+                    const tag = node.tagName.toLowerCase();
+                    if (['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote'].includes(tag)) {
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                    return NodeFilter.FILTER_SKIP;
+                }
+            }
+        );
+
+        let node;
+        while (node = walker.nextNode()) {
+            const text = node.textContent.trim();
+            if (text.length > 20) { // Skip very short paragraphs
+                paragraphs.push(text);
+            }
+        }
+
+        // If we got very little content, try getting all text
+        if (paragraphs.join('').length < 500) {
+            const allText = contentEl.textContent
+                .replace(/\s+/g, ' ')
+                .trim()
+                .split(/\.\s+/)
+                .filter(s => s.length > 30)
+                .join('.\n\n');
+            return allText;
+        }
+
+        return paragraphs.join('\n\n');
+    },
+
+    showLoadingState() {
+        this.elements.loadingState.style.display = 'flex';
+        this.elements.inputContainer.style.display = 'none';
+        this.elements.articleView.style.display = 'none';
     },
 
     close() {
@@ -370,6 +504,7 @@ const Reader = {
     },
 
     showInputView() {
+        this.elements.loadingState.style.display = 'none';
         this.elements.inputContainer.style.display = 'flex';
         this.elements.articleView.style.display = 'none';
         this.elements.textarea.value = '';
@@ -377,6 +512,7 @@ const Reader = {
     },
 
     showArticleView(content) {
+        this.elements.loadingState.style.display = 'none';
         this.elements.inputContainer.style.display = 'none';
         this.elements.articleView.style.display = 'block';
 
