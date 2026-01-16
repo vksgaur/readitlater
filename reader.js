@@ -373,26 +373,21 @@ const Reader = {
         this.showLoadingState();
 
         try {
-            // Use allorigins.win as CORS proxy
-            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+            // Use the shared ContentFetcher which has multiple CORS proxies
+            const articleData = await ContentFetcher.fetchArticle(url);
 
-            const response = await fetch(proxyUrl, {
-                timeout: 15000
-            });
+            if (articleData.content && articleData.content.trim().length > 100) {
+                this.currentArticle.content = articleData.content;
 
-            if (!response.ok) {
-                throw new Error('Failed to fetch');
-            }
+                // Also update title if we got a better one
+                if (articleData.title && articleData.title.length > this.currentArticle.title.length) {
+                    this.currentArticle.title = articleData.title;
+                    this.elements.title.textContent = articleData.title;
+                    this.elements.articleTitle.textContent = articleData.title;
+                }
 
-            const html = await response.text();
-
-            // Parse HTML and extract main content
-            const content = this.extractContent(html);
-
-            if (content && content.trim().length > 100) {
-                this.currentArticle.content = content;
                 this.saveArticle();
-                this.showArticleView(content);
+                this.showArticleView(articleData.content);
             } else {
                 throw new Error('Could not extract content');
             }
@@ -400,93 +395,6 @@ const Reader = {
             console.log('Content fetch failed:', error.message);
             this.showInputView();
         }
-    },
-
-    extractContent(html) {
-        // Create a DOM parser
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-
-        // Remove unwanted elements
-        const removeSelectors = [
-            'script', 'style', 'nav', 'header', 'footer', 'aside',
-            '.sidebar', '.nav', '.menu', '.advertisement', '.ads', '.ad',
-            '.social', '.share', '.comments', '.related', '.recommended',
-            '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
-            '.cookie', '.popup', '.modal', 'iframe', 'form'
-        ];
-
-        removeSelectors.forEach(selector => {
-            doc.querySelectorAll(selector).forEach(el => el.remove());
-        });
-
-        // Try to find main content using common selectors
-        const contentSelectors = [
-            'article',
-            '[role="main"]',
-            'main',
-            '.post-content',
-            '.article-content',
-            '.entry-content',
-            '.content',
-            '.post',
-            '.article-body',
-            '.story-body',
-            '#content',
-            '#main'
-        ];
-
-        let contentEl = null;
-        for (const selector of contentSelectors) {
-            contentEl = doc.querySelector(selector);
-            if (contentEl && contentEl.textContent.trim().length > 200) {
-                break;
-            }
-        }
-
-        // Fallback to body
-        if (!contentEl) {
-            contentEl = doc.body;
-        }
-
-        if (!contentEl) return '';
-
-        // Extract text content preserving paragraphs
-        const paragraphs = [];
-        const walker = doc.createTreeWalker(
-            contentEl,
-            NodeFilter.SHOW_ELEMENT,
-            {
-                acceptNode: (node) => {
-                    const tag = node.tagName.toLowerCase();
-                    if (['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote'].includes(tag)) {
-                        return NodeFilter.FILTER_ACCEPT;
-                    }
-                    return NodeFilter.FILTER_SKIP;
-                }
-            }
-        );
-
-        let node;
-        while (node = walker.nextNode()) {
-            const text = node.textContent.trim();
-            if (text.length > 20) { // Skip very short paragraphs
-                paragraphs.push(text);
-            }
-        }
-
-        // If we got very little content, try getting all text
-        if (paragraphs.join('').length < 500) {
-            const allText = contentEl.textContent
-                .replace(/\s+/g, ' ')
-                .trim()
-                .split(/\.\s+/)
-                .filter(s => s.length > 30)
-                .join('.\n\n');
-            return allText;
-        }
-
-        return paragraphs.join('\n\n');
     },
 
     showLoadingState() {

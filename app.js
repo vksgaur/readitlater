@@ -350,7 +350,8 @@ const UI = {
             userName: document.getElementById('userName'),
             syncStatus: document.getElementById('syncStatus'),
             configNotice: document.getElementById('configNotice'),
-            dismissNotice: document.getElementById('dismissNotice')
+            dismissNotice: document.getElementById('dismissNotice'),
+            addBtn: document.getElementById('addButton')
         };
     },
 
@@ -408,12 +409,32 @@ const UI = {
 
     async handleAddArticle() {
         const url = this.elements.urlInput.value.trim();
-        const title = this.elements.titleInput.value.trim();
+        let title = this.elements.titleInput.value.trim();
         const category = this.elements.categorySelect.value;
 
         if (!this.validateUrl(url)) {
             this.showError('Please enter a valid URL');
             return;
+        }
+
+        // Disable button and show loading state
+        const addBtn = this.elements.addBtn;
+        const originalText = addBtn.textContent;
+        addBtn.disabled = true;
+        addBtn.textContent = 'Fetching...';
+
+        // If no title provided, try to fetch it from the URL
+        if (!title) {
+            try {
+                const metadata = await ContentFetcher.fetchMetadata(url);
+                if (metadata.title) {
+                    title = metadata.title;
+                    console.log('✓ Auto-fetched title:', title);
+                }
+            } catch (error) {
+                console.log('Could not fetch title:', error.message);
+                // Will fall back to domain name
+            }
         }
 
         const article = new Article(url, title, category);
@@ -431,6 +452,10 @@ const UI = {
         } else {
             this.showError('Failed to save article');
         }
+
+        // Restore button
+        addBtn.disabled = false;
+        addBtn.textContent = originalText;
     },
 
     validateUrl(url) {
