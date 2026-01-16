@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="Save articles and links to read later. A beautiful reading list manager with cloud sync.">
+    <title>ReadLater - Save Articles for Later</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <div class="logo-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                    <h1>ReadLater</h1>
+                </div>
+
+                <!-- Auth & Stats Section -->
+                <div class="header-right">
+                    <div class="stats">
+                        <span class="stat" id="totalCount">
+                            <span class="stat-value">0</span>
+                            <span class="stat-label">Total</span>
+                        </span>
+                        <span class="stat" id="unreadCount">
+                            <span class="stat-value">0</span>
+                            <span class="stat-label">Unread</span>
+                        </span>
+                    </div>
+
+                    <!-- Sync Status -->
+                    <div class="sync-status" id="syncStatus" title="Sync status">
+                        <svg class="sync-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <polyline points="1 20 1 14 7 14"></polyline>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                        </svg>
+                        <span class="sync-text">Local</span>
+                    </div>
+
+                    <!-- Auth UI -->
+                    <div class="auth-section" id="authSection">
+                        <!-- Signed Out State -->
+                        <button class="btn-signin" id="signInBtn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24">
+                                <path fill="#4285F4"
+                                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                                <path fill="#34A853"
+                                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                                <path fill="#FBBC05"
+                                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                                <path fill="#EA4335"
+                                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                            </svg>
+                            Sign in with Google
+                        </button>
+
+                        <!-- Signed In State -->
+                        <div class="user-profile" id="userProfile" style="display: none;">
+                            <img class="user-avatar" id="userAvatar" src="" alt="User avatar">
+                            <span class="user-name" id="userName"></span>
+                            <button class="btn-signout" id="signOutBtn" title="Sign out">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                    <polyline points="16 17 21 12 16 7"></polyline>
+                                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Firebase Config Notice -->
+        <div class="config-notice" id="configNotice">
+            <div class="notice-content">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <span>Firebase not configured. Articles are saved locally only. <a href="firebase-config.js"
+                        target="_blank">Configure Firebase</a> for cloud sync.</span>
+                <button class="notice-dismiss" id="dismissNotice">×</button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Add Article Form -->
+            <section class="add-section">
+                <form id="addForm" class="add-form">
+                    <div class="form-row">
+                        <div class="input-group url-input">
+                            <label for="urlInput">URL</label>
+                            <input type="url" id="urlInput" placeholder="https://example.com/article" required
+                                autocomplete="off">
+                        </div>
+                        <div class="input-group title-input">
+                            <label for="titleInput">Title (optional)</label>
+                            <input type="text" id="titleInput" placeholder="Custom title..." autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="input-group category-input">
+                            <label for="categorySelect">Category</label>
+                            <select id="categorySelect">
+                                <option value="general">General</option>
+                                <option value="tech">Tech</option>
+                                <option value="news">News</option>
+                                <option value="design">Design</option>
+                                <option value="productivity">Productivity</option>
+                                <option value="entertainment">Entertainment</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn-add" id="addButton">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Add Article
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Filters & Search -->
+            <section class="filters-section">
+                <div class="search-box">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" id="searchInput" placeholder="Search articles...">
+                </div>
+                <div class="filter-tabs">
+                    <button class="filter-tab active" data-filter="all">All</button>
+                    <button class="filter-tab" data-filter="unread">Unread</button>
+                    <button class="filter-tab" data-filter="read">Read</button>
+                </div>
+                <div class="category-filter">
+                    <select id="categoryFilter">
+                        <option value="all">All Categories</option>
+                        <option value="general">General</option>
+                        <option value="tech">Tech</option>
+                        <option value="news">News</option>
+                        <option value="design">Design</option>
+                        <option value="productivity">Productivity</option>
+                        <option value="entertainment">Entertainment</option>
+                    </select>
+                </div>
+            </section>
+
+            <!-- Articles List -->
+            <section class="articles-section">
+                <!-- Loading State -->
+                <div class="loading-state" id="loadingState">
+                    <div class="loading-spinner"></div>
+                    <p>Loading articles...</p>
+                </div>
+
+                <div class="articles-grid" id="articlesGrid">
+                    <!-- Articles will be rendered here -->
+                </div>
+
+                <!-- Empty State -->
+                <div class="empty-state" id="emptyState">
+                    <div class="empty-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                    <h3>No articles saved yet</h3>
+                    <p>Add your first article using the form above</p>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>ReadLater — Your personal reading list, synced across all devices</p>
+        </footer>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+    <!-- App Scripts -->
+    <script src="firebase-config.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
