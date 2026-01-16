@@ -543,6 +543,13 @@ const UI = {
                     <span>Added ${relativeTime}</span>
                 </div>
                 <div class="card-actions">
+                    <button class="btn-action btn-reader" data-action="reader" data-id="${article.id}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                        </svg>
+                        Read
+                    </button>
                     <button class="btn-action btn-open" data-action="open" data-url="${this.escapeHtml(article.url)}">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
@@ -581,6 +588,19 @@ const UI = {
         document.querySelectorAll('[data-action="delete"]').forEach(btn => {
             btn.addEventListener('click', () => this.handleDelete(btn.dataset.id));
         });
+
+        // Reader buttons
+        document.querySelectorAll('[data-action="reader"]').forEach(btn => {
+            btn.addEventListener('click', () => this.handleOpenReader(btn.dataset.id));
+        });
+    },
+
+    handleOpenReader(id) {
+        const articles = this.cachedArticles.length > 0 ? this.cachedArticles : Storage.getArticles();
+        const article = articles.find(a => a.id === id);
+        if (article && typeof Reader !== 'undefined') {
+            Reader.open(article);
+        }
     },
 
     // Auth UI

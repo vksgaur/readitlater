@@ -802,6 +802,16 @@ body {
     color: var(--accent-secondary);
 }
 
+.btn-action.btn-reader {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+}
+
+.btn-action.btn-reader:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2));
+}
+
 /* ============================================
    Empty State
    ============================================ */
