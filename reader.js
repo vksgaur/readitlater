@@ -9,6 +9,9 @@ const Reader = {
     selectedColor: 'yellow',
     currentTheme: 'dark',
     currentFontSize: 'medium',
+    currentFontFamily: 'serif',
+    currentLineHeight: 'normal',
+    currentWidth: 'medium',
     isOpen: false,
 
     // DOM Elements
@@ -66,12 +69,36 @@ const Reader = {
                             
                             <div class="reader-settings-dropdown" id="settingsDropdown">
                                 <div class="settings-group">
+                                    <span class="settings-label">Font</span>
+                                    <div class="settings-row">
+                                        <button class="font-family-btn active" data-font="serif">Serif</button>
+                                        <button class="font-family-btn" data-font="sans">Sans</button>
+                                        <button class="font-family-btn" data-font="mono">Mono</button>
+                                    </div>
+                                </div>
+                                <div class="settings-group">
                                     <span class="settings-label">Font Size</span>
                                     <div class="settings-row">
                                         <button class="font-size-btn" data-size="small">A</button>
                                         <button class="font-size-btn active" data-size="medium">A</button>
                                         <button class="font-size-btn" data-size="large">A</button>
                                         <button class="font-size-btn" data-size="xlarge">A</button>
+                                    </div>
+                                </div>
+                                <div class="settings-group">
+                                    <span class="settings-label">Line Height</span>
+                                    <div class="settings-row">
+                                        <button class="line-height-btn" data-height="compact">Compact</button>
+                                        <button class="line-height-btn active" data-height="normal">Normal</button>
+                                        <button class="line-height-btn" data-height="relaxed">Relaxed</button>
+                                    </div>
+                                </div>
+                                <div class="settings-group">
+                                    <span class="settings-label">Content Width</span>
+                                    <div class="settings-row">
+                                        <button class="width-btn" data-width="narrow">Narrow</button>
+                                        <button class="width-btn active" data-width="medium">Medium</button>
+                                        <button class="width-btn" data-width="wide">Wide</button>
                                     </div>
                                 </div>
                                 <div class="settings-group">
@@ -261,6 +288,27 @@ const Reader = {
             });
         });
 
+        // Font family buttons
+        document.querySelectorAll('.font-family-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.setFontFamily(btn.dataset.font);
+            });
+        });
+
+        // Line height buttons
+        document.querySelectorAll('.line-height-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.setLineHeight(btn.dataset.height);
+            });
+        });
+
+        // Content width buttons
+        document.querySelectorAll('.width-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.setContentWidth(btn.dataset.width);
+            });
+        });
+
         // Textarea input
         this.elements.textarea.addEventListener('input', () => {
             this.elements.startReadingBtn.disabled = !this.elements.textarea.value.trim();
@@ -318,8 +366,15 @@ const Reader = {
     loadSettings() {
         const savedTheme = localStorage.getItem('reader_theme') || 'dark';
         const savedFontSize = localStorage.getItem('reader_fontsize') || 'medium';
+        const savedFontFamily = localStorage.getItem('reader_fontfamily') || 'serif';
+        const savedLineHeight = localStorage.getItem('reader_lineheight') || 'normal';
+        const savedWidth = localStorage.getItem('reader_width') || 'medium';
+
         this.setTheme(savedTheme);
         this.setFontSize(savedFontSize);
+        this.setFontFamily(savedFontFamily);
+        this.setLineHeight(savedLineHeight);
+        this.setContentWidth(savedWidth);
     },
 
     selectColor(color) {
@@ -345,13 +400,54 @@ const Reader = {
     setFontSize(size) {
         this.currentFontSize = size;
         this.elements.overlay.className = this.elements.overlay.className
-            .replace(/font-\w+/, `font-${size}`);
+            .replace(/font-size-\w+/g, '')
+            .trim() + ` font-size-${size}`;
 
         document.querySelectorAll('.font-size-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.size === size);
         });
 
         localStorage.setItem('reader_fontsize', size);
+    },
+
+    setFontFamily(font) {
+        this.currentFontFamily = font;
+        // Remove existing font-family classes and add new one
+        this.elements.overlay.className = this.elements.overlay.className
+            .replace(/font-family-\w+/g, '')
+            .trim() + ` font-family-${font}`;
+
+        document.querySelectorAll('.font-family-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.font === font);
+        });
+
+        localStorage.setItem('reader_fontfamily', font);
+    },
+
+    setLineHeight(height) {
+        this.currentLineHeight = height;
+        this.elements.overlay.className = this.elements.overlay.className
+            .replace(/line-height-\w+/g, '')
+            .trim() + ` line-height-${height}`;
+
+        document.querySelectorAll('.line-height-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.height === height);
+        });
+
+        localStorage.setItem('reader_lineheight', height);
+    },
+
+    setContentWidth(width) {
+        this.currentWidth = width;
+        this.elements.overlay.className = this.elements.overlay.className
+            .replace(/content-width-\w+/g, '')
+            .trim() + ` content-width-${width}`;
+
+        document.querySelectorAll('.width-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.width === width);
+        });
+
+        localStorage.setItem('reader_width', width);
     },
 
     async open(article) {

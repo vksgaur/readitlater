@@ -880,3 +880,78 @@
         right: -50px;
     }
 }
+
+/* ============================================
+   Font Family Settings
+   ============================================ */
+
+.reader-overlay.font-family-serif .reader-body,
+.reader-overlay.font-family-serif .reader-article-title {
+    font-family: 'Georgia', 'Times New Roman', 'Noto Serif', serif;
+}
+
+.reader-overlay.font-family-sans .reader-body,
+.reader-overlay.font-family-sans .reader-article-title {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.reader-overlay.font-family-mono .reader-body,
+.reader-overlay.font-family-mono .reader-article-title {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    letter-spacing: -0.02em;
+}
+
+/* ============================================
+   Line Height Settings
+   ============================================ */
+
+.reader-overlay.line-height-compact .reader-body {
+    line-height: 1.5;
+}
+
+.reader-overlay.line-height-normal .reader-body {
+    line-height: 1.8;
+}
+
+.reader-overlay.line-height-relaxed .reader-body {
+    line-height: 2.2;
+}
+
+/* ============================================
+   Content Width Settings
+   ============================================ */
+
+.reader-overlay.content-width-narrow .reader-article-view {
+    max-width: 550px;
+    margin: 0 auto;
+}
+
+.reader-overlay.content-width-medium .reader-article-view {
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.reader-overlay.content-width-wide .reader-article-view {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+/* ============================================
+   Font Size Settings
+   ============================================ */
+
+.reader-overlay.font-size-small .reader-body {
+    font-size: 0.95rem;
+}
+
+.reader-overlay.font-size-medium .reader-body {
+    font-size: 1.1rem;
+}
+
+.reader-overlay.font-size-large .reader-body {
+    font-size: 1.3rem;
+}
+
+.reader-overlay.font-size-xlarge .reader-body {
+    font-size: 1.5rem;
+}

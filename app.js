@@ -622,8 +622,12 @@ const UI = {
         const toggleText = article.isRead ? 'Mark Unread' : 'Mark Read';
         const cardClass = article.isRead ? 'is-read' : '';
 
-        // Reading time display
-        const readingTime = article.readingTime || 0;
+        // Reading time display - calculate from content if not set
+        let readingTime = article.readingTime || 0;
+        if (readingTime === 0 && article.content) {
+            const words = article.content.trim().split(/\s+/).length;
+            readingTime = Math.max(1, Math.ceil(words / 200));
+        }
         const readingTimeText = readingTime > 0 ? `${readingTime} min read` : '';
 
         // Reading progress
