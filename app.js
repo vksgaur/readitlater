@@ -282,13 +282,19 @@ const Storage = {
 // ============================================
 
 class Article {
-    constructor(url, title = '', category = 'general') {
+    constructor(url, title = '', category = 'poem', options = {}) {
         this.id = this.generateId();
         this.url = url;
         this.title = title || this.extractDomain(url);
         this.category = category;
         this.isRead = false;
         this.dateAdded = new Date().toISOString();
+
+        // New fields
+        this.thumbnail = options.thumbnail || '';
+        this.readingTime = options.readingTime || 0;
+        this.readProgress = 0; // 0-100 percentage
+        this.tags = options.tags || [];
     }
 
     generateId() {
@@ -313,6 +319,7 @@ const UI = {
     elements: {},
     currentFilter: 'all',
     currentCategoryFilter: 'all',
+    currentTagFilter: '',
     searchQuery: '',
     cachedArticles: [],
 
@@ -351,7 +358,9 @@ const UI = {
             syncStatus: document.getElementById('syncStatus'),
             configNotice: document.getElementById('configNotice'),
             dismissNotice: document.getElementById('dismissNotice'),
-            addBtn: document.getElementById('addButton')
+            addBtn: document.getElementById('addButton'),
+            tagsInput: document.getElementById('tagsInput'),
+            tagsFilterContainer: document.getElementById('tagsFilterContainer')
         };
     },
 
@@ -419,30 +428,45 @@ const UI = {
 
         // Disable button and show loading state
         const addBtn = this.elements.addBtn;
-        const originalText = addBtn.textContent;
+        const originalText = addBtn.innerHTML;
         addBtn.disabled = true;
-        addBtn.textContent = 'Fetching...';
+        addBtn.innerHTML = '<span class="loading-spinner-small"></span> Fetching...';
 
-        // If no title provided, try to fetch it from the URL
-        if (!title) {
-            try {
-                const metadata = await ContentFetcher.fetchMetadata(url);
-                if (metadata.title) {
-                    title = metadata.title;
-                    console.log('✓ Auto-fetched title:', title);
-                }
-            } catch (error) {
-                console.log('Could not fetch title:', error.message);
-                // Will fall back to domain name
+        // Parse tags from input
+        const tagsRaw = this.elements.tagsInput ? this.elements.tagsInput.value.trim() : '';
+        const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim().toLowerCase()).filter(t => t) : [];
+
+        // Fetch article metadata (title, thumbnail, reading time)
+        let articleData = { title: '', image: '', readingTime: 0 };
+        try {
+            articleData = await ContentFetcher.fetchArticle(url);
+            if (!title && articleData.title) {
+                title = articleData.title;
             }
+            console.log('✓ Fetched article data:', articleData.title);
+        } catch (error) {
+            console.log('Could not fetch article data:', error.message);
         }
 
-        const article = new Article(url, title, category);
+        const article = new Article(url, title, category, {
+            thumbnail: articleData.image || '',
+            readingTime: articleData.readingTime || 0,
+            tags: tags
+        });
+
+        // Store content if fetched
+        if (articleData.content) {
+            article.content = articleData.content;
+        }
 
         if (await Storage.addArticle(article)) {
             this.elements.urlInput.value = '';
             this.elements.titleInput.value = '';
-            this.elements.categorySelect.value = 'general';
+            this.elements.categorySelect.value = 'poem';
+            if (this.elements.tagsInput) this.elements.tagsInput.value = '';
+
+            // Update tags filter
+            this.updateTagsFilter();
 
             // If not using Firebase real-time updates, render manually
             if (!currentUser || !FirebaseService.isConfigured) {
@@ -455,7 +479,7 @@ const UI = {
 
         // Restore button
         addBtn.disabled = false;
-        addBtn.textContent = originalText;
+        addBtn.innerHTML = originalText;
     },
 
     validateUrl(url) {
@@ -503,10 +527,16 @@ const UI = {
             filtered = filtered.filter(a => a.category === this.currentCategoryFilter);
         }
 
+        // Tag filter
+        if (this.currentTagFilter) {
+            filtered = filtered.filter(a => a.tags && a.tags.includes(this.currentTagFilter));
+        }
+
         if (this.searchQuery) {
             filtered = filtered.filter(a =>
                 a.title.toLowerCase().includes(this.searchQuery) ||
-                a.url.toLowerCase().includes(this.searchQuery)
+                a.url.toLowerCase().includes(this.searchQuery) ||
+                (a.tags && a.tags.some(t => t.includes(this.searchQuery)))
             );
         }
 
@@ -540,7 +570,49 @@ const UI = {
 
     render() {
         this.cachedArticles = Storage.getArticles();
+        this.updateTagsFilter();
         this.applyFilters();
+    },
+
+    updateTagsFilter() {
+        const articles = this.cachedArticles.length > 0 ? this.cachedArticles : Storage.getArticles();
+
+        // Collect all unique tags
+        const allTags = new Set();
+        articles.forEach(article => {
+            if (article.tags && Array.isArray(article.tags)) {
+                article.tags.forEach(tag => allTags.add(tag));
+            }
+        });
+
+        // Render tag filter chips
+        const container = this.elements.tagsFilterContainer;
+        if (!container) return;
+
+        if (allTags.size === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        const tagsArray = Array.from(allTags).sort();
+        container.innerHTML = `
+            <span class="tags-label">Tags:</span>
+            ${tagsArray.map(tag => `
+                <button class="tag-filter-btn ${this.currentTagFilter === tag ? 'active' : ''}" data-tag="${tag}">
+                    ${tag}
+                </button>
+            `).join('')}
+            ${this.currentTagFilter ? '<button class="tag-filter-btn clear" data-tag="">Clear</button>' : ''}
+        `;
+
+        // Bind tag filter events
+        container.querySelectorAll('.tag-filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.currentTagFilter = btn.dataset.tag;
+                this.updateTagsFilter();
+                this.applyFilters();
+            });
+        });
     },
 
     renderArticleCard(article) {
@@ -550,12 +622,39 @@ const UI = {
         const toggleText = article.isRead ? 'Mark Unread' : 'Mark Read';
         const cardClass = article.isRead ? 'is-read' : '';
 
+        // Reading time display
+        const readingTime = article.readingTime || 0;
+        const readingTimeText = readingTime > 0 ? `${readingTime} min read` : '';
+
+        // Reading progress
+        const readProgress = article.readProgress || 0;
+        const progressClass = readProgress > 0 ? 'has-progress' : '';
+
+        // Thumbnail
+        const thumbnailHtml = article.thumbnail
+            ? `<div class="card-thumbnail"><img src="${this.escapeHtml(article.thumbnail)}" alt="" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`
+            : '';
+
+        // Tags
+        const tagsHtml = article.tags && article.tags.length > 0
+            ? `<div class="card-tags">${article.tags.map(tag => `<span class="tag" data-tag="${this.escapeHtml(tag)}">${this.escapeHtml(tag)}</span>`).join('')}</div>`
+            : '';
+
+        // Category display name
+        const categoryDisplay = this.getCategoryDisplayName(article.category);
+
         return `
-            <article class="article-card ${cardClass}" data-id="${article.id}">
+            <article class="article-card ${cardClass} ${progressClass}" data-id="${article.id}">
+                ${thumbnailHtml}
+                ${readProgress > 0 ? `<div class="card-progress-bar"><div class="progress-fill" style="width: ${readProgress}%"></div></div>` : ''}
                 <div class="card-header">
                     <div class="card-status">
                         <span class="status-badge ${statusClass}">${statusText}</span>
-                        <span class="category-badge ${article.category}">${article.category}</span>
+                        <span class="category-badge ${article.category}">${categoryDisplay}</span>
+                    </div>
+                    <div class="card-reading-info">
+                        ${readingTimeText ? `<span class="reading-time">${readingTimeText}</span>` : ''}
+                        ${readProgress > 0 ? `<span class="reading-progress">${readProgress}%</span>` : ''}
                     </div>
                 </div>
                 <h3 class="card-title">
@@ -564,6 +663,7 @@ const UI = {
                     </a>
                 </h3>
                 <p class="card-url">${this.escapeHtml(article.url)}</p>
+                ${tagsHtml}
                 <div class="card-meta">
                     <span>Added ${relativeTime}</span>
                 </div>
@@ -599,6 +699,18 @@ const UI = {
                 </div>
             </article>
         `;
+    },
+
+    getCategoryDisplayName(category) {
+        const names = {
+            'poem': 'Poem',
+            'short-story': 'Short Story',
+            'finance': 'Finance',
+            'deep': 'Deep',
+            'other': 'Other',
+            'general': 'General'
+        };
+        return names[category] || category;
     },
 
     bindCardEvents() {

@@ -236,6 +236,17 @@ const ContentFetcher = {
     },
 
     /**
+     * Calculate reading time based on content
+     * Average reading speed: 200 words per minute
+     */
+    calculateReadingTime(content) {
+        if (!content) return 1;
+        const words = content.trim().split(/\s+/).length;
+        const minutes = Math.ceil(words / 200);
+        return Math.max(1, minutes); // At least 1 minute
+    },
+
+    /**
      * Fetch and extract both metadata and content
      */
     async fetchArticle(url) {
@@ -243,12 +254,14 @@ const ContentFetcher = {
 
         const metadata = this.extractMetadata(html);
         const content = this.extractContent(html);
+        const readingTime = this.calculateReadingTime(content);
 
         return {
             title: metadata.title,
             description: metadata.description,
             image: metadata.image,
-            content: content
+            content: content,
+            readingTime: readingTime
         };
     },
 

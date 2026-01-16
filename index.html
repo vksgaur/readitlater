@@ -125,13 +125,16 @@
                         <div class="input-group category-input">
                             <label for="categorySelect">Category</label>
                             <select id="categorySelect">
-                                <option value="general">General</option>
-                                <option value="tech">Tech</option>
-                                <option value="news">News</option>
-                                <option value="design">Design</option>
-                                <option value="productivity">Productivity</option>
-                                <option value="entertainment">Entertainment</option>
+                                <option value="poem">Poem</option>
+                                <option value="short-story">Short Story</option>
+                                <option value="finance">Finance</option>
+                                <option value="deep">Deep</option>
+                                <option value="other">Other</option>
                             </select>
+                        </div>
+                        <div class="input-group tags-input">
+                            <label for="tagsInput">Tags (optional)</label>
+                            <input type="text" id="tagsInput" placeholder="e.g., motivation, life" autocomplete="off">
                         </div>
                         <button type="submit" class="btn-add" id="addButton">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
@@ -164,13 +167,15 @@
                 <div class="category-filter">
                     <select id="categoryFilter">
                         <option value="all">All Categories</option>
-                        <option value="general">General</option>
-                        <option value="tech">Tech</option>
-                        <option value="news">News</option>
-                        <option value="design">Design</option>
-                        <option value="productivity">Productivity</option>
-                        <option value="entertainment">Entertainment</option>
+                        <option value="poem">Poem</option>
+                        <option value="short-story">Short Story</option>
+                        <option value="finance">Finance</option>
+                        <option value="deep">Deep</option>
+                        <option value="other">Other</option>
                     </select>
+                </div>
+                <div class="tags-filter" id="tagsFilterContainer">
+                    <!-- Tags will be populated dynamically -->
                 </div>
             </section>
 

@@ -304,6 +304,15 @@ const Reader = {
                 this.closeNoteModal();
             }
         });
+
+        // Reading progress tracking
+        let scrollTimeout;
+        this.elements.content.addEventListener('scroll', () => {
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+                this.updateReadProgress();
+            }, 300);
+        });
     },
 
     loadSettings() {
@@ -426,6 +435,44 @@ const Reader = {
 
         // Convert content to HTML paragraphs and restore highlights
         this.renderContent(content);
+
+        // Restore scroll position after rendering
+        setTimeout(() => {
+            this.restoreScrollPosition();
+        }, 100);
+    },
+
+    updateReadProgress() {
+        if (!this.currentArticle || !this.elements.content) return;
+
+        const content = this.elements.content;
+        const scrollTop = content.scrollTop;
+        const scrollHeight = content.scrollHeight - content.clientHeight;
+
+        if (scrollHeight <= 0) return;
+
+        const progress = Math.min(100, Math.round((scrollTop / scrollHeight) * 100));
+
+        // Only update if progress increased (don't track scrolling back up)
+        if (progress > (this.currentArticle.readProgress || 0)) {
+            this.currentArticle.readProgress = progress;
+            this.saveArticle();
+            console.log(`Reading progress: ${progress}%`);
+        }
+    },
+
+    restoreScrollPosition() {
+        if (!this.currentArticle || !this.elements.content) return;
+
+        const progress = this.currentArticle.readProgress || 0;
+        if (progress > 0 && progress < 100) {
+            const content = this.elements.content;
+            const scrollHeight = content.scrollHeight - content.clientHeight;
+            const scrollTop = (progress / 100) * scrollHeight;
+
+            content.scrollTop = scrollTop;
+            console.log(`Restored to ${progress}% position`);
+        }
     },
 
     startReading() {
