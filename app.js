@@ -1062,6 +1062,20 @@ const UI = {
             );
         }
 
+        // Sort by lastReadAt (most recent first), then by dateAdded for articles never read
+        filtered.sort((a, b) => {
+            // Both have lastReadAt - sort by most recent
+            if (a.lastReadAt && b.lastReadAt) {
+                return new Date(b.lastReadAt) - new Date(a.lastReadAt);
+            }
+            // Only a has lastReadAt - a comes first
+            if (a.lastReadAt) return -1;
+            // Only b has lastReadAt - b comes first
+            if (b.lastReadAt) return 1;
+            // Neither has lastReadAt - sort by dateAdded (newest first)
+            return new Date(b.dateAdded) - new Date(a.dateAdded);
+        });
+
         return filtered;
     },
 

@@ -106,6 +106,10 @@ const Reader = {
         const readerHTML = `
             <!-- Reader Overlay -->
             <div class="reader-overlay theme-dark font-medium" id="readerOverlay">
+                <!-- Reading Progress Bar -->
+                <div class="reading-progress-container">
+                    <div class="reading-progress-bar" id="readingProgressBar"></div>
+                </div>
                 <!-- Toolbar -->
                 <div class="reader-toolbar">
                     <div class="reader-toolbar-left">
@@ -354,7 +358,9 @@ const Reader = {
             // Metadata editor elements
             categorySelect: document.getElementById('readerCategorySelect'),
             tagsInput: document.getElementById('readerTagsInput'),
-            saveMetadataBtn: document.getElementById('btnSaveMetadata')
+            saveMetadataBtn: document.getElementById('btnSaveMetadata'),
+            // Reading progress bar
+            readingProgressBar: document.getElementById('readingProgressBar')
         };
     },
 
@@ -485,13 +491,14 @@ const Reader = {
             }
         });
 
-        // Reading progress tracking
-        let scrollTimeout;
+        // Reading progress tracking - update visual immediately, debounce save
+        let saveTimeout;
         this.elements.content.addEventListener('scroll', () => {
-            clearTimeout(scrollTimeout);
-            scrollTimeout = setTimeout(() => {
-                this.updateReadProgress();
-            }, 300);
+            this.updateReadProgressVisual();
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                this.saveReadProgress();
+            }, 500);
         });
 
         // Metadata save button
@@ -607,11 +614,21 @@ const Reader = {
         this.isOpen = true;
         document.body.style.overflow = 'hidden';
 
+        // Initialize progress bar with saved progress
+        if (this.elements.readingProgressBar) {
+            const savedProgress = article.readProgress || 0;
+            this.elements.readingProgressBar.style.width = `${savedProgress}%`;
+        }
+
         // Update URL hash for state persistence
         window.history.pushState({ articleId: article.id }, '', `#read/${article.id}`);
 
         this.updateHighlightCount();
         this.renderHighlightsList();
+
+        // Update lastReadAt to track recently opened articles
+        this.currentArticle.lastReadAt = new Date().toISOString();
+        await Storage.updateArticle(article.id, { lastReadAt: this.currentArticle.lastReadAt });
 
         // Check if article already has content
         if (article.content && article.content.trim()) {
@@ -753,23 +770,42 @@ const Reader = {
         }, 100);
     },
 
-    updateReadProgress() {
-        if (!this.currentArticle || !this.elements.content) return;
+    // Calculate current scroll progress percentage
+    getScrollProgress() {
+        if (!this.currentArticle || !this.elements.content) return 0;
 
         const content = this.elements.content;
         const scrollTop = content.scrollTop;
         const scrollHeight = content.scrollHeight - content.clientHeight;
 
-        if (scrollHeight <= 0) return;
+        if (scrollHeight <= 0) return 0;
 
-        const progress = Math.min(100, Math.round((scrollTop / scrollHeight) * 100));
+        return Math.min(100, Math.round((scrollTop / scrollHeight) * 100));
+    },
 
-        // Only update if progress increased (don't track scrolling back up)
+    // Update visual progress bar only (called on every scroll)
+    updateReadProgressVisual() {
+        const progress = this.getScrollProgress();
+        if (this.elements.readingProgressBar) {
+            this.elements.readingProgressBar.style.width = `${progress}%`;
+        }
+    },
+
+    // Save progress to storage (debounced, only if increased)
+    saveReadProgress() {
+        if (!this.currentArticle) return;
+
+        const progress = this.getScrollProgress();
         if (progress > (this.currentArticle.readProgress || 0)) {
             this.currentArticle.readProgress = progress;
             this.saveArticle();
-            console.log(`Reading progress: ${progress}%`);
         }
+    },
+
+    // Legacy function kept for compatibility
+    updateReadProgress() {
+        this.updateReadProgressVisual();
+        this.saveReadProgress();
     },
 
     restoreScrollPosition() {
