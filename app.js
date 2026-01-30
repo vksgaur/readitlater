@@ -171,7 +171,8 @@ const FirebaseService = {
 
         try {
             UI.updateSyncStatus('syncing');
-            await articlesRef.doc(id).update(updates);
+            // Use set with merge to handle both existing and new documents
+            await articlesRef.doc(id).set(updates, { merge: true });
             UI.updateSyncStatus('synced');
             return true;
         } catch (error) {
