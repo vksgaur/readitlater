@@ -1,5 +1,5 @@
 /**
- * ReadLater - Read It Later Web Application
+ * Margins - Your Curated Reading List
  * A beautiful reading list manager with Firebase cloud sync
  */
 
@@ -140,7 +140,20 @@ const FirebaseService = {
                 title: article.title,
                 category: article.category,
                 isRead: article.isRead,
-                dateAdded: article.dateAdded
+                dateAdded: article.dateAdded,
+                // Additional fields that were missing
+                tags: article.tags || [],
+                isFavorite: article.isFavorite || false,
+                isArchived: article.isArchived || false,
+                thumbnail: article.thumbnail || '',
+                readingTime: article.readingTime || 0,
+                content: article.content || '',
+                highlights: article.highlights || [],
+                readProgress: article.readProgress || 0,
+                folderId: article.folderId || null,
+                lastReadAt: article.lastReadAt || null,
+                readCount: article.readCount || 0,
+                totalReadTime: article.totalReadTime || 0
             });
             UI.updateSyncStatus('synced');
             return true;
@@ -260,7 +273,11 @@ const Storage = {
 
         // If signed in, also update Firestore
         if (currentUser && FirebaseService.isConfigured) {
-            return await FirebaseService.updateArticle(id, updates);
+            const success = await FirebaseService.updateArticle(id, updates);
+            if (!success) {
+                throw new Error('Failed to sync with cloud storage');
+            }
+            return success;
         }
         return true;
     },
@@ -278,6 +295,338 @@ const Storage = {
 };
 
 // ============================================
+// Highlights Manager (Global Search & Stats)
+// ============================================
+
+const HighlightsManager = {
+    // Get all highlights across all articles
+    getAllHighlights() {
+        const articles = Storage.getArticles();
+        const allHighlights = [];
+
+        articles.forEach(article => {
+            if (article.highlights && article.highlights.length > 0) {
+                article.highlights.forEach(h => {
+                    allHighlights.push({
+                        ...h,
+                        articleId: article.id,
+                        articleTitle: article.title,
+                        articleUrl: article.url
+                    });
+                });
+            }
+        });
+
+        return allHighlights;
+    },
+
+    // Search highlights by text, note, or tags
+    searchHighlights(query) {
+        const allHighlights = this.getAllHighlights();
+        const lowerQuery = query.toLowerCase();
+
+        return allHighlights.filter(h =>
+            h.text.toLowerCase().includes(lowerQuery) ||
+            (h.note && h.note.toLowerCase().includes(lowerQuery)) ||
+            (h.tags && h.tags.some(t => t.includes(lowerQuery)))
+        );
+    },
+
+    // Get highlights by tag
+    getHighlightsByTag(tag) {
+        const allHighlights = this.getAllHighlights();
+        return allHighlights.filter(h => h.tags && h.tags.includes(tag.toLowerCase()));
+    },
+
+    // Get all unique tags from highlights
+    getAllTags() {
+        const allHighlights = this.getAllHighlights();
+        const tagCounts = {};
+
+        allHighlights.forEach(h => {
+            if (h.tags) {
+                h.tags.forEach(tag => {
+                    tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+                });
+            }
+        });
+
+        return Object.entries(tagCounts)
+            .map(([tag, count]) => ({ tag, count }))
+            .sort((a, b) => b.count - a.count);
+    },
+
+    // Get highlight statistics
+    getStats() {
+        const allHighlights = this.getAllHighlights();
+        const articles = Storage.getArticles();
+        const articlesWithHighlights = articles.filter(a => a.highlights && a.highlights.length > 0);
+
+        const colorCounts = {};
+        allHighlights.forEach(h => {
+            colorCounts[h.color] = (colorCounts[h.color] || 0) + 1;
+        });
+
+        const highlightsWithNotes = allHighlights.filter(h => h.note && h.note.trim());
+        const highlightsWithTags = allHighlights.filter(h => h.tags && h.tags.length > 0);
+
+        return {
+            totalHighlights: allHighlights.length,
+            articlesWithHighlights: articlesWithHighlights.length,
+            highlightsWithNotes: highlightsWithNotes.length,
+            highlightsWithTags: highlightsWithTags.length,
+            colorDistribution: colorCounts,
+            topTags: this.getAllTags().slice(0, 10),
+            avgHighlightsPerArticle: articlesWithHighlights.length > 0
+                ? (allHighlights.length / articlesWithHighlights.length).toFixed(1)
+                : 0
+        };
+    },
+
+    // Export all highlights to Markdown
+    exportAllHighlights() {
+        const allHighlights = this.getAllHighlights();
+
+        if (allHighlights.length === 0) {
+            alert('No highlights to export');
+            return;
+        }
+
+        // Group by article
+        const byArticle = {};
+        allHighlights.forEach(h => {
+            if (!byArticle[h.articleId]) {
+                byArticle[h.articleId] = {
+                    title: h.articleTitle,
+                    url: h.articleUrl,
+                    highlights: []
+                };
+            }
+            byArticle[h.articleId].highlights.push(h);
+        });
+
+        let markdown = `# All Highlights\n\nExported: ${new Date().toLocaleString()}\n\n`;
+        markdown += `Total: ${allHighlights.length} highlights from ${Object.keys(byArticle).length} articles\n\n---\n\n`;
+
+        Object.values(byArticle).forEach(article => {
+            markdown += `## ${article.title}\n\n`;
+            markdown += `[${article.url}](${article.url})\n\n`;
+
+            article.highlights.forEach(h => {
+                markdown += `> ${h.text}\n\n`;
+                if (h.note) markdown += `**Note:** ${h.note}\n\n`;
+                if (h.tags && h.tags.length) markdown += `**Tags:** ${h.tags.join(', ')}\n\n`;
+            });
+
+            markdown += `---\n\n`;
+        });
+
+        // Download file
+        const blob = new Blob([markdown], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `all-highlights-${new Date().toISOString().split('T')[0]}.md`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+};
+
+// ============================================
+// Reading Analytics Module
+// ============================================
+
+const ReadingAnalytics = {
+    // Reading session tracking
+    currentSession: null,
+    readingSessions: [],
+
+    // Start a reading session
+    startSession(articleId) {
+        this.currentSession = {
+            articleId,
+            startTime: Date.now(),
+            endTime: null,
+            duration: 0
+        };
+    },
+
+    // End current reading session
+    endSession() {
+        if (this.currentSession) {
+            this.currentSession.endTime = Date.now();
+            this.currentSession.duration = this.currentSession.endTime - this.currentSession.startTime;
+
+            // Save session to history
+            this.saveSession(this.currentSession);
+
+            // Update article stats
+            this.updateArticleStats(this.currentSession.articleId, this.currentSession.duration);
+
+            this.currentSession = null;
+        }
+    },
+
+    // Save session to localStorage
+    saveSession(session) {
+        const sessions = JSON.parse(localStorage.getItem('readitlater_sessions') || '[]');
+        sessions.push(session);
+        // Keep only last 100 sessions
+        if (sessions.length > 100) sessions.shift();
+        localStorage.setItem('readitlater_sessions', JSON.stringify(sessions));
+    },
+
+    // Update article read stats
+    updateArticleStats(articleId, duration) {
+        const articles = Storage.getArticles();
+        const article = articles.find(a => a.id === articleId);
+
+        if (article) {
+            article.lastReadAt = new Date().toISOString();
+            article.readCount = (article.readCount || 0) + 1;
+            article.totalReadTime = (article.totalReadTime || 0) + duration;
+            Storage.saveArticles(articles);
+        }
+    },
+
+    // Estimate reading time for content (words per minute)
+    estimateReadingTime(text, wpm = 200) {
+        if (!text) return 0;
+        const wordCount = text.trim().split(/\s+/).length;
+        return Math.ceil(wordCount / wpm);
+    },
+
+    // Get reading history (last N days)
+    getReadingHistory(days = 30) {
+        const sessions = JSON.parse(localStorage.getItem('readitlater_sessions') || '[]');
+        const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+
+        return sessions.filter(s => s.startTime > cutoff);
+    },
+
+    // Get daily reading stats
+    getDailyStats(days = 7) {
+        const sessions = this.getReadingHistory(days);
+        const dailyStats = {};
+
+        sessions.forEach(s => {
+            const date = new Date(s.startTime).toISOString().split('T')[0];
+            if (!dailyStats[date]) {
+                dailyStats[date] = { sessions: 0, totalTime: 0, articles: new Set() };
+            }
+            dailyStats[date].sessions++;
+            dailyStats[date].totalTime += s.duration || 0;
+            dailyStats[date].articles.add(s.articleId);
+        });
+
+        // Convert to array and sort by date
+        return Object.entries(dailyStats)
+            .map(([date, stats]) => ({
+                date,
+                sessions: stats.sessions,
+                totalTime: stats.totalTime,
+                articlesRead: stats.articles.size
+            }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+    },
+
+    // Calculate reading streak
+    getReadingStreak() {
+        const dailyStats = this.getDailyStats(365);
+        if (dailyStats.length === 0) return 0;
+
+        const today = new Date().toISOString().split('T')[0];
+        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+        let streak = 0;
+        let checkDate = today;
+
+        // Check if read today
+        const readToday = dailyStats.some(s => s.date === today);
+        if (!readToday) {
+            // Check yesterday - if didn't read yesterday, streak is 0
+            const readYesterday = dailyStats.some(s => s.date === yesterday);
+            if (!readYesterday) return 0;
+            checkDate = yesterday;
+        }
+
+        // Count consecutive days
+        const dates = new Set(dailyStats.map(s => s.date));
+        let d = new Date(checkDate);
+
+        while (dates.has(d.toISOString().split('T')[0])) {
+            streak++;
+            d.setDate(d.getDate() - 1);
+        }
+
+        return streak;
+    },
+
+    // Get comprehensive analytics
+    getAnalytics() {
+        const articles = Storage.getArticles();
+        const sessions = this.getReadingHistory(30);
+        const dailyStats = this.getDailyStats(7);
+
+        // Calculate totals
+        const totalReadTime = sessions.reduce((sum, s) => sum + (s.duration || 0), 0);
+        const readArticles = articles.filter(a => a.isRead);
+        const unreadArticles = articles.filter(a => !a.isRead && !a.isArchived);
+        const favoriteArticles = articles.filter(a => a.isFavorite);
+
+        // Most read articles
+        const mostRead = [...articles]
+            .filter(a => a.readCount > 0)
+            .sort((a, b) => (b.readCount || 0) - (a.readCount || 0))
+            .slice(0, 5);
+
+        // Recently read
+        const recentlyRead = [...articles]
+            .filter(a => a.lastReadAt)
+            .sort((a, b) => new Date(b.lastReadAt) - new Date(a.lastReadAt))
+            .slice(0, 5);
+
+        // Category distribution
+        const categoryStats = {};
+        articles.forEach(a => {
+            categoryStats[a.category] = (categoryStats[a.category] || 0) + 1;
+        });
+
+        return {
+            // Summary stats
+            totalArticles: articles.length,
+            readArticles: readArticles.length,
+            unreadArticles: unreadArticles.length,
+            favoriteArticles: favoriteArticles.length,
+
+            // Reading stats
+            totalReadTime: Math.round(totalReadTime / 60000), // minutes
+            sessionsLast30Days: sessions.length,
+            readingStreak: this.getReadingStreak(),
+            avgSessionTime: sessions.length > 0
+                ? Math.round((totalReadTime / sessions.length) / 60000)
+                : 0,
+
+            // Trends
+            dailyStats,
+            categoryDistribution: categoryStats,
+
+            // Lists
+            mostReadArticles: mostRead,
+            recentlyReadArticles: recentlyRead
+        };
+    },
+
+    // Format time for display
+    formatTime(minutes) {
+        if (minutes < 60) return `${minutes}m`;
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+    }
+};
+
+// ============================================
 // Article Model
 // ============================================
 
@@ -290,11 +639,20 @@ class Article {
         this.isRead = false;
         this.dateAdded = new Date().toISOString();
 
-        // New fields
+        // Content & progress fields
         this.thumbnail = options.thumbnail || '';
         this.readingTime = options.readingTime || 0;
         this.readProgress = 0; // 0-100 percentage
         this.tags = options.tags || [];
+
+        // Organization fields
+        this.isFavorite = options.isFavorite || false;
+        this.isArchived = options.isArchived || false;
+        this.folderId = options.folderId || null;
+
+        // Analytics fields
+        this.lastReadAt = null;
+        this.readCount = 0;
     }
 
     generateId() {
@@ -312,6 +670,70 @@ class Article {
 }
 
 // ============================================
+// Folder Model
+// ============================================
+
+class Folder {
+    constructor(name, color = '#6366f1') {
+        this.id = `folder_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        this.name = name;
+        this.color = color;
+        this.createdAt = new Date().toISOString();
+    }
+}
+
+// ============================================
+// Folder Manager
+// ============================================
+
+const FolderManager = {
+    STORAGE_KEY: 'readlater_folders',
+
+    getFolders() {
+        try {
+            const data = localStorage.getItem(this.STORAGE_KEY);
+            return data ? JSON.parse(data) : [];
+        } catch (error) {
+            console.error('Error reading folders:', error);
+            return [];
+        }
+    },
+
+    saveFolders(folders) {
+        try {
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(folders));
+            return true;
+        } catch (error) {
+            console.error('Error saving folders:', error);
+            return false;
+        }
+    },
+
+    addFolder(name, color) {
+        const folders = this.getFolders();
+        const folder = new Folder(name, color);
+        folders.push(folder);
+        this.saveFolders(folders);
+        return folder;
+    },
+
+    deleteFolder(id) {
+        const folders = this.getFolders().filter(f => f.id !== id);
+        return this.saveFolders(folders);
+    },
+
+    updateFolder(id, updates) {
+        const folders = this.getFolders();
+        const index = folders.findIndex(f => f.id === id);
+        if (index !== -1) {
+            folders[index] = { ...folders[index], ...updates };
+            return this.saveFolders(folders);
+        }
+        return false;
+    }
+};
+
+// ============================================
 // UI Controller
 // ============================================
 
@@ -320,8 +742,11 @@ const UI = {
     currentFilter: 'all',
     currentCategoryFilter: 'all',
     currentTagFilter: '',
+    currentFolderFilter: null,
     searchQuery: '',
     cachedArticles: [],
+    selectedArticles: [], // For bulk actions
+    isSelectionMode: false,
 
     init() {
         this.cacheElements();
@@ -333,6 +758,35 @@ const UI = {
         // If not using Firebase or not signed in, render from localStorage
         if (!FirebaseService.isConfigured || !currentUser) {
             this.render();
+        }
+
+        // Handle bookmarklet URL parameters
+        this.handleBookmarkletParams();
+    },
+
+    // Handle URL parameters from bookmarklet
+    handleBookmarkletParams() {
+        const params = new URLSearchParams(window.location.search);
+        const addMode = params.get('add');
+        const url = params.get('url');
+        const title = params.get('title');
+
+        if (addMode && url) {
+            // Pre-fill the form with bookmarklet data
+            this.elements.urlInput.value = decodeURIComponent(url);
+            if (title) {
+                this.elements.titleInput.value = decodeURIComponent(title);
+            }
+
+            // Focus the title field for quick editing
+            this.elements.titleInput.focus();
+            this.elements.titleInput.select();
+
+            // Clear URL parameters
+            window.history.replaceState({}, document.title, window.location.pathname);
+
+            // Show visual feedback
+            this.showSuccess('Article URL loaded! Edit details and click Add Article.');
         }
     },
 
@@ -360,7 +814,13 @@ const UI = {
             dismissNotice: document.getElementById('dismissNotice'),
             addBtn: document.getElementById('addButton'),
             tagsInput: document.getElementById('tagsInput'),
-            tagsFilterContainer: document.getElementById('tagsFilterContainer')
+            tagsFilterContainer: document.getElementById('tagsFilterContainer'),
+            // Stats widget elements
+            statsWidget: document.getElementById('statsWidget'),
+            statStreak: document.getElementById('statStreak'),
+            statTotal: document.getElementById('statTotal'),
+            statRead: document.getElementById('statRead'),
+            statTime: document.getElementById('statTime')
         };
     },
 
@@ -424,6 +884,18 @@ const UI = {
         if (!this.validateUrl(url)) {
             this.showError('Please enter a valid URL');
             return;
+        }
+
+        // Check for duplicate URLs
+        const normalizedUrl = this.normalizeUrl(url);
+        const articles = this.cachedArticles.length > 0 ? this.cachedArticles : Storage.getArticles();
+        const duplicate = articles.find(a => this.normalizeUrl(a.url) === normalizedUrl);
+
+        if (duplicate) {
+            const confirmAdd = confirm(`This article "${duplicate.title}" is already saved. Add anyway?`);
+            if (!confirmAdd) {
+                return;
+            }
         }
 
         // Disable button and show loading state
@@ -491,6 +963,20 @@ const UI = {
         }
     },
 
+    // Normalize URL for duplicate detection (removes protocol, www, trailing slash)
+    normalizeUrl(url) {
+        try {
+            const parsed = new URL(url);
+            let normalized = parsed.hostname.replace(/^www\./, '') + parsed.pathname;
+            // Remove trailing slash
+            normalized = normalized.replace(/\/$/, '');
+            // Remove common tracking params
+            return normalized.toLowerCase();
+        } catch {
+            return url.toLowerCase();
+        }
+    },
+
     async handleToggleRead(id) {
         const articles = Storage.getArticles();
         const article = articles.find(a => a.id === id);
@@ -510,6 +996,28 @@ const UI = {
         }
     },
 
+    async handleToggleFavorite(id) {
+        const articles = Storage.getArticles();
+        const article = articles.find(a => a.id === id);
+        if (article) {
+            await Storage.updateArticle(id, { isFavorite: !article.isFavorite });
+            if (!currentUser || !FirebaseService.isConfigured) {
+                this.render();
+            }
+        }
+    },
+
+    async handleToggleArchive(id) {
+        const articles = Storage.getArticles();
+        const article = articles.find(a => a.id === id);
+        if (article) {
+            await Storage.updateArticle(id, { isArchived: !article.isArchived });
+            if (!currentUser || !FirebaseService.isConfigured) {
+                this.render();
+            }
+        }
+    },
+
     handleOpen(url) {
         window.open(url, '_blank', 'noopener,noreferrer');
     },
@@ -517,14 +1025,28 @@ const UI = {
     getFilteredArticles(articles) {
         let filtered = [...articles];
 
-        if (this.currentFilter === 'read') {
-            filtered = filtered.filter(a => a.isRead);
+        // Handle special filters
+        if (this.currentFilter === 'favorites') {
+            filtered = filtered.filter(a => a.isFavorite && !a.isArchived);
+        } else if (this.currentFilter === 'archived') {
+            filtered = filtered.filter(a => a.isArchived);
+        } else if (this.currentFilter === 'read') {
+            filtered = filtered.filter(a => a.isRead && !a.isArchived);
         } else if (this.currentFilter === 'unread') {
-            filtered = filtered.filter(a => !a.isRead);
+            filtered = filtered.filter(a => !a.isRead && !a.isArchived);
+        } else {
+            // 'all' filter excludes archived articles
+            filtered = filtered.filter(a => !a.isArchived);
         }
 
+        // Category filter
         if (this.currentCategoryFilter !== 'all') {
             filtered = filtered.filter(a => a.category === this.currentCategoryFilter);
+        }
+
+        // Folder filter
+        if (this.currentFolderFilter) {
+            filtered = filtered.filter(a => a.folderId === this.currentFolderFilter);
         }
 
         // Tag filter
@@ -572,6 +1094,31 @@ const UI = {
         this.cachedArticles = Storage.getArticles();
         this.updateTagsFilter();
         this.applyFilters();
+        this.updateStats();
+    },
+
+    // Update stats widget with analytics data
+    updateStats() {
+        if (typeof ReadingAnalytics === 'undefined') return;
+
+        try {
+            const analytics = ReadingAnalytics.getAnalytics();
+
+            if (this.elements.statStreak) {
+                this.elements.statStreak.textContent = analytics.readingStreak || 0;
+            }
+            if (this.elements.statTotal) {
+                this.elements.statTotal.textContent = analytics.totalArticles || 0;
+            }
+            if (this.elements.statRead) {
+                this.elements.statRead.textContent = analytics.readArticles || 0;
+            }
+            if (this.elements.statTime) {
+                this.elements.statTime.textContent = ReadingAnalytics.formatTime(analytics.totalReadTime || 0);
+            }
+        } catch (e) {
+            console.log('Stats update skipped', e);
+        }
     },
 
     updateTagsFilter() {
@@ -634,9 +1181,9 @@ const UI = {
         const readProgress = article.readProgress || 0;
         const progressClass = readProgress > 0 ? 'has-progress' : '';
 
-        // Thumbnail
+        // Thumbnail with lazy loading
         const thumbnailHtml = article.thumbnail
-            ? `<div class="card-thumbnail"><img src="${this.escapeHtml(article.thumbnail)}" alt="" loading="lazy" onerror="this.parentElement.style.display='none'"></div>`
+            ? `<div class="card-thumbnail"><img data-src="${this.escapeHtml(article.thumbnail)}" alt="" onerror="this.parentElement.style.display='none'"></div>`
             : '';
 
         // Tags
@@ -662,30 +1209,19 @@ const UI = {
                     </div>
                 </div>
                 <h3 class="card-title">
-                    <a href="${this.escapeHtml(article.url)}" target="_blank" rel="noopener noreferrer">
+                    <a href="#" class="title-link" data-action="reader" data-id="${article.id}">
                         ${this.escapeHtml(article.title)}
                     </a>
                 </h3>
-                <p class="card-url">${this.escapeHtml(article.url)}</p>
                 ${tagsHtml}
                 <div class="card-meta">
                     <span>Added ${relativeTime}</span>
                 </div>
                 <div class="card-actions">
-                    <button class="btn-action btn-reader" data-action="reader" data-id="${article.id}">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
-                            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                    <button class="btn-action btn-favorite ${article.isFavorite ? 'active' : ''}" data-action="favorite" data-id="${article.id}" title="${article.isFavorite ? 'Remove from favorites' : 'Add to favorites'}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="${article.isFavorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
                         </svg>
-                        Read
-                    </button>
-                    <button class="btn-action btn-open" data-action="open" data-url="${this.escapeHtml(article.url)}">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                            <polyline points="15 3 21 3 21 9"></polyline>
-                            <line x1="10" y1="14" x2="21" y2="3"></line>
-                        </svg>
-                        Open
                     </button>
                     <button class="btn-action btn-read" data-action="toggle" data-id="${article.id}">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -693,16 +1229,22 @@ const UI = {
                         </svg>
                         ${toggleText}
                     </button>
+                    <button class="btn-action btn-archive" data-action="archive" data-id="${article.id}" title="${article.isArchived ? 'Unarchive' : 'Archive'}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                            <rect x="1" y="3" width="22" height="5"></rect>
+                            <line x1="10" y1="12" x2="14" y2="12"></line>
+                        </svg>
+                    </button>
                     <button class="btn-action btn-delete" data-action="delete" data-id="${article.id}">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="3 6 5 6 21 6"></polyline>
                             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                         </svg>
-                        Delete
                     </button>
                 </div>
             </article>
-        `;
+    `;
     },
 
     getCategoryDisplayName(category) {
@@ -730,10 +1272,60 @@ const UI = {
             btn.addEventListener('click', () => this.handleDelete(btn.dataset.id));
         });
 
-        // Reader buttons
+        // Reader buttons (including title links)
         document.querySelectorAll('[data-action="reader"]').forEach(btn => {
-            btn.addEventListener('click', () => this.handleOpenReader(btn.dataset.id));
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.handleOpenReader(btn.dataset.id);
+            });
         });
+
+        // Favorite buttons
+        document.querySelectorAll('[data-action="favorite"]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.handleToggleFavorite(btn.dataset.id);
+            });
+        });
+
+        // Archive buttons
+        document.querySelectorAll('[data-action="archive"]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.handleToggleArchive(btn.dataset.id);
+            });
+        });
+
+        // Lazy load images with Intersection Observer
+        this.setupLazyLoading();
+    },
+
+    // Setup Intersection Observer for lazy loading images
+    setupLazyLoading() {
+        const images = document.querySelectorAll('.card-thumbnail img[data-src]');
+
+        if ('IntersectionObserver' in window) {
+            const imageObserver = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        img.src = img.dataset.src;
+                        img.removeAttribute('data-src');
+                        observer.unobserve(img);
+                    }
+                });
+            }, {
+                rootMargin: '50px 0px', // Start loading 50px before visible
+                threshold: 0.01
+            });
+
+            images.forEach(img => imageObserver.observe(img));
+        } else {
+            // Fallback for older browsers
+            images.forEach(img => {
+                img.src = img.dataset.src;
+            });
+        }
     },
 
     handleOpenReader(id) {
@@ -836,9 +1428,60 @@ const UI = {
 };
 
 // ============================================
+// Theme Manager
+// ============================================
+
+const ThemeManager = {
+    storageKey: 'margins_theme',
+
+    init() {
+        // Load saved theme or use system preference
+        const savedTheme = localStorage.getItem(this.storageKey);
+        if (savedTheme) {
+            this.setTheme(savedTheme);
+        } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+            this.setTheme('light');
+        }
+
+        // Listen for system theme changes
+        window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+            if (!localStorage.getItem(this.storageKey)) {
+                this.setTheme(e.matches ? 'light' : 'dark');
+            }
+        });
+
+        // Bind toggle button
+        const toggleBtn = document.getElementById('themeToggle');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', () => this.toggle());
+        }
+    },
+
+    setTheme(theme) {
+        if (theme === 'light') {
+            document.documentElement.setAttribute('data-theme', 'light');
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+        }
+        localStorage.setItem(this.storageKey, theme);
+    },
+
+    toggle() {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        this.setTheme(newTheme);
+    },
+
+    getCurrentTheme() {
+        return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    }
+};
+
+// ============================================
 // Initialize Application
 // ============================================
 
 document.addEventListener('DOMContentLoaded', () => {
+    ThemeManager.init();
     UI.init();
 });

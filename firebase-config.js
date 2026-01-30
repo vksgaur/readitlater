@@ -1,5 +1,5 @@
 /**
- * Firebase Configuration for ReadLater
+ * Firebase Configuration for Margins
  * 
  * SETUP INSTRUCTIONS:
  * 1. Go to https://console.firebase.google.com
