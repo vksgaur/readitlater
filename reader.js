@@ -22,6 +22,84 @@ const Reader = {
         this.cacheElements();
         this.bindEvents();
         this.loadSettings();
+        this.setupHashRouting();
+    },
+
+    // Handle URL hash routing for reader state persistence
+    setupHashRouting() {
+        // Listen for browser back/forward navigation
+        window.addEventListener('popstate', (e) => {
+            if (this.isOpen && !window.location.hash.startsWith('#read/')) {
+                // User navigated back, close reader without pushing new history
+                this.closeWithoutHistoryUpdate();
+            } else if (!this.isOpen && window.location.hash.startsWith('#read/')) {
+                // User navigated forward to a reader state
+                this.restoreFromHash();
+            }
+        });
+
+        // Check for hash on initial page load (after a small delay to ensure articles are loaded)
+        setTimeout(() => this.restoreFromHash(), 500);
+    },
+
+    // Restore reader state from URL hash
+    restoreFromHash() {
+        const hash = window.location.hash;
+        if (hash.startsWith('#read/')) {
+            const articleId = hash.replace('#read/', '');
+            const articles = Storage.getArticles();
+            const article = articles.find(a => a.id === articleId);
+
+            if (article) {
+                // Open without pushing to history (we're already at this hash)
+                this.openWithoutHistoryPush(article);
+            } else {
+                // Article not found, clear the hash
+                window.history.replaceState({}, '', window.location.pathname + window.location.search);
+            }
+        }
+    },
+
+    // Open reader without pushing to history (for restoration)
+    async openWithoutHistoryPush(article) {
+        this.currentArticle = article;
+        this.highlights = article.highlights || [];
+
+        this.elements.title.textContent = article.title;
+        this.elements.articleTitle.textContent = article.title;
+        this.elements.articleLink.href = article.url;
+
+        this.elements.overlay.classList.add('active');
+        this.isOpen = true;
+        document.body.style.overflow = 'hidden';
+
+        // Don't push to history - we're restoring from existing hash
+
+        this.updateHighlightCount();
+        this.renderHighlightsList();
+
+        if (article.content && article.content.trim()) {
+            this.showArticleView(article.content);
+        } else {
+            await this.fetchArticleContent(article.url);
+        }
+    },
+
+    // Close reader without updating history (for popstate handling)
+    closeWithoutHistoryUpdate() {
+        try {
+            if (typeof ReadingAnalytics !== 'undefined') {
+                ReadingAnalytics.endSession();
+            }
+        } catch (e) {
+            console.error('Error ending reading session:', e);
+        }
+
+        this.elements.overlay.classList.remove('active');
+        this.isOpen = false;
+        document.body.style.overflow = '';
+        this.hideHighlightPopup();
+        this.elements.settingsDropdown.classList.remove('active');
     },
 
     createReaderDOM() {
@@ -109,6 +187,29 @@ const Reader = {
                                         <button class="theme-btn" data-theme="sepia">Sepia</button>
                                     </div>
                                 </div>
+                                <hr class="settings-divider">
+                                <div class="settings-group">
+                                    <span class="settings-label">Article Category</span>
+                                    <select class="metadata-select" id="readerCategorySelect">
+                                        <option value="general">General</option>
+                                        <option value="tech">Tech</option>
+                                        <option value="news">News</option>
+                                        <option value="design">Design</option>
+                                        <option value="productivity">Productivity</option>
+                                        <option value="entertainment">Entertainment</option>
+                                    </select>
+                                </div>
+                                <div class="settings-group">
+                                    <span class="settings-label">Tags</span>
+                                    <input type="text" class="metadata-input" id="readerTagsInput" placeholder="ai, webdev, important">
+                                    <span class="settings-hint">Comma-separated</span>
+                                </div>
+                                <button class="btn-save-metadata" id="btnSaveMetadata">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                    Save Changes
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -159,7 +260,10 @@ const Reader = {
                                 Highlights
                                 <span class="highlight-count" id="sidebarHighlightCount">0</span>
                             </span>
-                            <button class="btn-export-highlights" id="btnExportHighlights">Export</button>
+                            <div class="sidebar-actions">
+                                <button class="btn-export-highlights" id="btnExportHighlights" title="Copy to clipboard">📋</button>
+                                <button class="btn-export-highlights" id="btnExportPDF" title="Export to PDF">📄</button>
+                            </div>
                         </div>
                         <div class="highlights-list" id="highlightsList">
                             <div class="highlights-empty" id="highlightsEmpty">
@@ -191,7 +295,17 @@ const Reader = {
                     </div>
                     <div class="note-highlight-preview" id="noteHighlightPreview"></div>
                     <textarea class="note-textarea" id="noteTextarea" placeholder="Add your note..."></textarea>
+                    <div class="note-tags-input">
+                        <label for="noteTagsInput">Tags</label>
+                        <input type="text" id="noteTagsInput" placeholder="Add tags (comma separated)" />
+                    </div>
                     <div class="note-modal-actions">
+                        <button class="btn-note-delete" id="btnNoteDelete" title="Delete highlight">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                        </button>
                         <button class="btn-note-cancel" id="btnNoteCancel">Cancel</button>
                         <button class="btn-note-save" id="btnNoteSave">Save Note</button>
                     </div>
@@ -230,10 +344,17 @@ const Reader = {
             noteModalOverlay: document.getElementById('noteModalOverlay'),
             noteHighlightPreview: document.getElementById('noteHighlightPreview'),
             noteTextarea: document.getElementById('noteTextarea'),
+            noteTagsInput: document.getElementById('noteTagsInput'),
             noteCloseBtn: document.getElementById('btnNoteClose'),
             noteCancelBtn: document.getElementById('btnNoteCancel'),
             noteSaveBtn: document.getElementById('btnNoteSave'),
-            loadingState: document.getElementById('readerLoading')
+            noteDeleteBtn: document.getElementById('btnNoteDelete'),
+            exportPdfBtn: document.getElementById('btnExportPDF'),
+            loadingState: document.getElementById('readerLoading'),
+            // Metadata editor elements
+            categorySelect: document.getElementById('readerCategorySelect'),
+            tagsInput: document.getElementById('readerTagsInput'),
+            saveMetadataBtn: document.getElementById('btnSaveMetadata')
         };
     },
 
@@ -343,10 +464,21 @@ const Reader = {
             this.exportHighlights();
         });
 
+        // Export to PDF
+        this.elements.exportPdfBtn.addEventListener('click', () => {
+            this.exportHighlightsToPDF();
+        });
+
         // Note modal
         this.elements.noteCloseBtn.addEventListener('click', () => this.closeNoteModal());
         this.elements.noteCancelBtn.addEventListener('click', () => this.closeNoteModal());
         this.elements.noteSaveBtn.addEventListener('click', () => this.saveNote());
+        this.elements.noteDeleteBtn.addEventListener('click', () => {
+            if (this.currentEditingHighlightId && confirm('Delete this highlight?')) {
+                this.deleteHighlight(this.currentEditingHighlightId);
+                this.closeNoteModal();
+            }
+        });
         this.elements.noteModalOverlay.addEventListener('click', (e) => {
             if (e.target === this.elements.noteModalOverlay) {
                 this.closeNoteModal();
@@ -361,6 +493,11 @@ const Reader = {
                 this.updateReadProgress();
             }, 300);
         });
+
+        // Metadata save button
+        if (this.elements.saveMetadataBtn) {
+            this.elements.saveMetadataBtn.addEventListener('click', () => this.saveMetadata());
+        }
     },
 
     loadSettings() {
@@ -458,9 +595,20 @@ const Reader = {
         this.elements.articleTitle.textContent = article.title;
         this.elements.articleLink.href = article.url;
 
+        // Populate metadata editor fields
+        if (this.elements.categorySelect) {
+            this.elements.categorySelect.value = article.category || 'general';
+        }
+        if (this.elements.tagsInput) {
+            this.elements.tagsInput.value = (article.tags || []).join(', ');
+        }
+
         this.elements.overlay.classList.add('active');
         this.isOpen = true;
         document.body.style.overflow = 'hidden';
+
+        // Update URL hash for state persistence
+        window.history.pushState({ articleId: article.id }, '', `#read/${article.id}`);
 
         this.updateHighlightCount();
         this.renderHighlightsList();
@@ -471,6 +619,54 @@ const Reader = {
         } else {
             // Try to fetch content automatically
             await this.fetchArticleContent(article.url);
+        }
+    },
+
+    // Save article category and tags
+    async saveMetadata() {
+        if (!this.currentArticle) return;
+
+        const newCategory = this.elements.categorySelect?.value || 'general';
+        const tagsText = this.elements.tagsInput?.value || '';
+        const newTags = tagsText.split(',').map(t => t.trim()).filter(t => t);
+
+        try {
+            await Storage.updateArticle(this.currentArticle.id, {
+                category: newCategory,
+                tags: newTags
+            });
+
+            // Update current article object
+            this.currentArticle.category = newCategory;
+            this.currentArticle.tags = newTags;
+
+            // Show success feedback
+            const btn = this.elements.saveMetadataBtn;
+            btn.classList.add('saved');
+            btn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                Saved!
+            `;
+
+            setTimeout(() => {
+                btn.classList.remove('saved');
+                btn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Save Changes
+                `;
+            }, 2000);
+
+            // Refresh the article list if UI is available
+            if (typeof UI !== 'undefined' && UI.renderArticles) {
+                UI.renderArticles();
+            }
+        } catch (error) {
+            console.error('Failed to save metadata:', error);
+            alert('Failed to save changes. Please try again.');
         }
     },
 
@@ -506,14 +702,33 @@ const Reader = {
         this.elements.loadingState.style.display = 'flex';
         this.elements.inputContainer.style.display = 'none';
         this.elements.articleView.style.display = 'none';
+
+        // Start analytics session
+        if (typeof ReadingAnalytics !== 'undefined' && this.currentArticle) {
+            ReadingAnalytics.startSession(this.currentArticle.id);
+        }
     },
 
     close() {
+        // End analytics session before closing
+        try {
+            if (typeof ReadingAnalytics !== 'undefined') {
+                ReadingAnalytics.endSession();
+            }
+        } catch (e) {
+            console.error('Error ending reading session:', e);
+        }
+
         this.elements.overlay.classList.remove('active');
         this.isOpen = false;
         document.body.style.overflow = '';
         this.hideHighlightPopup();
         this.elements.settingsDropdown.classList.remove('active');
+
+        // Clear URL hash
+        if (window.location.hash.startsWith('#read/')) {
+            window.history.pushState({}, '', window.location.pathname + window.location.search);
+        }
     },
 
     showInputView() {
@@ -659,6 +874,7 @@ const Reader = {
             text: this.pendingSelection.text,
             color: color,
             note: '',
+            tags: [],
             timestamp: new Date().toISOString()
         };
 
@@ -706,10 +922,17 @@ const Reader = {
         this.highlights.forEach(highlight => {
             const item = document.createElement('div');
             item.className = 'highlight-item';
+
+            // Generate tags HTML
+            const tagsHtml = highlight.tags && highlight.tags.length > 0
+                ? `<div class="highlight-item-tags">${highlight.tags.map(t => `<span class="highlight-tag">${this.escapeHtml(t)}</span>`).join('')}</div>`
+                : '';
+
             item.innerHTML = `
                 <span class="highlight-item-color" style="background: ${this.getColorValue(highlight.color)}"></span>
                 <div class="highlight-item-text">${this.escapeHtml(highlight.text)}</div>
                 ${highlight.note ? `<div class="highlight-item-note">${this.escapeHtml(highlight.note)}</div>` : ''}
+                ${tagsHtml}
                 <div class="highlight-item-actions">
                     <button class="btn-highlight-action" data-action="note" data-id="${highlight.id}">
                         ${highlight.note ? 'Edit Note' : 'Add Note'}
@@ -748,12 +971,15 @@ const Reader = {
         this.currentEditingHighlightId = highlightId;
         this.elements.noteHighlightPreview.textContent = highlight.text;
         this.elements.noteTextarea.value = highlight.note || '';
+        // Populate tags input
+        this.elements.noteTagsInput.value = (highlight.tags || []).join(', ');
         this.elements.noteModalOverlay.classList.add('active');
         this.elements.noteTextarea.focus();
     },
 
     closeNoteModal() {
         this.elements.noteModalOverlay.classList.remove('active');
+        this.elements.noteTagsInput.value = '';
         this.currentEditingHighlightId = null;
     },
 
@@ -763,6 +989,11 @@ const Reader = {
         const highlight = this.highlights.find(h => h.id === this.currentEditingHighlightId);
         if (highlight) {
             highlight.note = this.elements.noteTextarea.value.trim();
+            // Parse and save tags
+            const tagsRaw = this.elements.noteTagsInput.value.trim();
+            highlight.tags = tagsRaw
+                ? tagsRaw.split(',').map(t => t.trim().toLowerCase()).filter(t => t)
+                : [];
             this.saveHighlights();
             this.renderHighlightsList();
         }
@@ -830,6 +1061,82 @@ const Reader = {
             document.body.removeChild(textarea);
             alert('Highlights copied to clipboard!');
         });
+    },
+
+    // Export highlights to PDF via print dialog
+    exportHighlightsToPDF() {
+        if (this.highlights.length === 0) {
+            alert('No highlights to export');
+            return;
+        }
+
+        // Create print-friendly HTML
+        const articleTitle = this.currentArticle?.title || 'Untitled';
+        const articleUrl = this.currentArticle?.url || '';
+        const date = new Date().toLocaleDateString();
+
+        let html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Highlights - ${articleTitle}</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Georgia, serif; line-height: 1.6; padding: 40px; max-width: 800px; margin: 0 auto; }
+        .header { border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+        .header h1 { font-size: 24px; margin-bottom: 8px; }
+        .header .meta { color: #666; font-size: 14px; }
+        .header a { color: #2563eb; }
+        .highlight-item { margin-bottom: 24px; page-break-inside: avoid; }
+        .highlight-text { background: #fef3c7; padding: 12px 16px; border-left: 4px solid #f59e0b; font-size: 16px; }
+        .highlight-note { color: #666; font-style: italic; margin-top: 8px; padding-left: 20px; font-size: 14px; }
+        .highlight-tags { margin-top: 8px; padding-left: 20px; }
+        .highlight-tag { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 4px; }
+        .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #888; font-size: 12px; text-align: center; }
+        @media print { 
+            body { padding: 20px; }
+            .footer { position: fixed; bottom: 0; left: 0; right: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Highlights</h1>
+        <div class="meta">
+            <strong>${articleTitle}</strong><br>
+            <a href="${articleUrl}">${articleUrl}</a><br>
+            Exported: ${date}
+        </div>
+    </div>
+    <div class="highlights">
+`;
+
+        this.highlights.forEach((h, i) => {
+            html += `
+        <div class="highlight-item">
+            <div class="highlight-text">${this.escapeHtml(h.text)}</div>
+            ${h.note ? `<div class="highlight-note">📝 ${this.escapeHtml(h.note)}</div>` : ''}
+            ${h.tags && h.tags.length ? `<div class="highlight-tags">${h.tags.map(t => `<span class="highlight-tag">${t}</span>`).join('')}</div>` : ''}
+        </div>`;
+        });
+
+        html += `
+    </div>
+    <div class="footer">
+        Generated by Margins • ${this.highlights.length} highlights
+    </div>
+</body>
+</html>`;
+
+        // Open in new window for printing
+        const printWindow = window.open('', '_blank', 'width=800,height=600');
+        printWindow.document.write(html);
+        printWindow.document.close();
+
+        // Wait for content to load then trigger print
+        printWindow.onload = () => {
+            printWindow.print();
+        };
     }
 };
 
