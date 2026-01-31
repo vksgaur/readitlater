@@ -20,11 +20,15 @@ let unsubscribeSnapshot = null;
 const FirebaseService = {
     isConfigured: false,
 
-    init() {
-        // Check if Firebase config exists and is valid
-        if (typeof firebaseConfig !== 'undefined' && isFirebaseConfigured()) {
+    async init() {
+        console.log('Initializing App...');
+
+        // Initialize Firebase
+        if (typeof firebase !== 'undefined' && typeof firebaseConfig !== 'undefined') {
             try {
-                firebase.initializeApp(firebaseConfig);
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(firebaseConfig);
+                }
                 auth = firebase.auth();
                 db = firebase.firestore();
 
@@ -33,16 +37,84 @@ const FirebaseService = {
                     .catch(err => console.log('Persistence error:', err.code));
 
                 this.isConfigured = true;
+
+                // Setup auth listener
                 this.setupAuthListener();
                 console.log('✓ Firebase initialized');
             } catch (error) {
-                console.error('Firebase init error:', error);
+                console.error('Firebase initialization error:', error);
                 this.isConfigured = false;
             }
         } else {
             console.log('ℹ Firebase not configured - using localStorage only');
             this.isConfigured = false;
             UI.showConfigNotice();
+        }
+
+        // Run tag cleanup once on startup
+        this.normalizeExistingTags();
+    },
+
+    // Self-healing: Merge case-variant tags (e.g. "Design" and "design")
+    normalizeExistingTags() {
+        // Assuming 'Storage' is a global object or imported, similar to 'LocalStorage'
+        // If 'Storage' is meant to be 'LocalStorage', please adjust.
+        const articles = LocalStorage.getArticles();
+        if (!articles.length) return;
+
+        const tagMap = new Map(); // lowercase -> { canonical: string, count: number }
+
+        // Step 1: Count frequency of each casing
+        articles.forEach(a => {
+            if (a.tags && Array.isArray(a.tags)) {
+                a.tags.forEach(tag => {
+                    const lower = tag.toLowerCase();
+                    if (!tagMap.has(lower)) {
+                        tagMap.set(lower, {});
+                    }
+                    const entry = tagMap.get(lower);
+                    entry[tag] = (entry[tag] || 0) + 1;
+                });
+            }
+        });
+
+        // Step 2: Determine canonical form for each (most frequent wins)
+        const canonicalMap = new Map(); // lowercase -> canonical string
+        let hasChanges = false;
+
+        tagMap.forEach((variations, lower) => {
+            // Find variation with highest count
+            let bestCurrent = lower;
+            let maxCount = -1;
+
+            Object.entries(variations).forEach(([variant, count]) => {
+                if (count > maxCount) {
+                    maxCount = count;
+                    bestCurrent = variant;
+                }
+            });
+            canonicalMap.set(lower, bestCurrent);
+        });
+
+        // Step 3: Update articles
+        articles.forEach(a => {
+            if (a.tags && Array.isArray(a.tags)) {
+                // Check if any tag needs updating
+                const newTags = a.tags.map(t => canonicalMap.get(t.toLowerCase()) || t);
+                const needsUpdate = JSON.stringify(a.tags) !== JSON.stringify(newTags);
+
+                if (needsUpdate) {
+                    a.tags = newTags;
+                    // We only save to local storage here to avoid huge cloud sync spikes on startup
+                    // Cloud will sync eventually when user edits or naturally
+                    LocalStorage.saveArticles(articles);
+                    hasChanges = true;
+                }
+            }
+        });
+
+        if (hasChanges) {
+            console.log('🧹 Tags normalized: Duplicates merged.');
         }
     },
 

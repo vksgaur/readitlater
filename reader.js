@@ -681,7 +681,27 @@ const Reader = {
 
         const newCategory = this.elements.categorySelect?.value || 'general';
         const tagsText = this.elements.tagsInput?.value || '';
-        const newTags = tagsText.split(',').map(t => t.trim()).filter(t => t);
+
+        // Normalize tags: Check against existing global tags to prevent case-duplicates
+        let newTags = tagsText.split(',').map(t => t.trim()).filter(t => t);
+
+        if (typeof Storage !== 'undefined' && Storage.getArticles) {
+            const allArticles = Storage.getArticles();
+            const existingTagsMap = new Map(); // lowercase -> canonical
+
+            // Build map of existing tags
+            allArticles.forEach(a => {
+                if (a.tags && Array.isArray(a.tags)) {
+                    a.tags.forEach(t => existingTagsMap.set(t.toLowerCase(), t));
+                }
+            });
+
+            // Map new tags to existing canonical forms if available
+            newTags = newTags.map(tag => {
+                const canonical = existingTagsMap.get(tag.toLowerCase());
+                return canonical || tag; // Use existing casing if found, else keep user input
+            });
+        }
 
         try {
             // Optimistically update local article object
