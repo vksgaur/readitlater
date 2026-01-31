@@ -177,13 +177,15 @@ const FirebaseService = {
     },
 
     // Update article in Firestore
+    // Update article in Firestore
     async updateArticle(id, updates) {
         const articlesRef = this.getArticlesRef();
         if (!articlesRef) return false;
 
         try {
             UI.updateSyncStatus('syncing');
-            await articlesRef.doc(id).update(updates);
+            // Use set with merge to handle both existing and new documents
+            await articlesRef.doc(id).set(updates, { merge: true });
             UI.updateSyncStatus('synced');
             return true;
         } catch (error) {
@@ -285,7 +287,11 @@ const Storage = {
 
         // If signed in, also update Firestore
         if (currentUser && FirebaseService.isConfigured) {
-            return await FirebaseService.updateArticle(id, updates);
+            const success = await FirebaseService.updateArticle(id, updates);
+            if (!success) {
+                throw new Error('Failed to sync with cloud storage');
+            }
+            return success;
         }
         return true;
     },
@@ -1069,6 +1075,20 @@ const UI = {
                 (a.tags && a.tags.some(t => t.includes(this.searchQuery)))
             );
         }
+
+        // Sort by lastReadAt (most recent first), then by dateAdded for articles never read
+        filtered.sort((a, b) => {
+            // Both have lastReadAt - sort by most recent
+            if (a.lastReadAt && b.lastReadAt) {
+                return new Date(b.lastReadAt) - new Date(a.lastReadAt);
+            }
+            // Only a has lastReadAt - a comes first
+            if (a.lastReadAt) return -1;
+            // Only b has lastReadAt - b comes first
+            if (b.lastReadAt) return 1;
+            // Neither has lastReadAt - sort by dateAdded (newest first)
+            return new Date(b.dateAdded) - new Date(a.dateAdded);
+        });
 
         return filtered;
     },
