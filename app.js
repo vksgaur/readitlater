@@ -1120,9 +1120,73 @@ const UI = {
 
     render() {
         this.cachedArticles = Storage.getArticles();
+        this.renderTagCloud(); // Build tag cloud from articles
         this.updateTagsFilter();
         this.applyFilters();
         this.updateStats();
+    },
+
+    // New: Render Global Tag Cloud
+    renderTagCloud() {
+        // Collect all tags and their counts
+        const tagCounts = {};
+        this.cachedArticles.forEach(article => {
+            if (article.tags && Array.isArray(article.tags)) {
+                article.tags.forEach(tag => {
+                    const normalizedTag = tag.toLowerCase().trim();
+                    if (normalizedTag) {
+                        tagCounts[normalizedTag] = (tagCounts[normalizedTag] || 0) + 1;
+                    }
+                });
+            }
+        });
+
+        // Find container (we might need to create it if it doesn't exist yet in HTML, 
+        // but for now let's assume we render it into the filters section or a new sidebar)
+        // Let's repurpose the 'tagsFilterContainer' for this visual cloud
+        const container = document.getElementById('tagsFilterContainer');
+        if (!container) return;
+
+        const tags = Object.keys(tagCounts);
+        if (tags.length === 0) {
+            container.innerHTML = '<span class="no-tags">No tags yet</span>';
+            return;
+        }
+
+        // Sort by count (desc) then name
+        tags.sort((a, b) => tagCounts[b] - tagCounts[a] || a.localeCompare(b));
+
+        container.innerHTML = tags.map(tag => {
+            const count = tagCounts[tag];
+            // Simple weighting: 1 to 3 classes based on count
+            const weightClass = count > 5 ? 'tag-large' : (count > 2 ? 'tag-medium' : 'tag-small');
+            const isActive = this.currentTagFilter === tag ? 'active' : '';
+
+            return `
+                <button class="tag-cloud-item ${weightClass} ${isActive}" 
+                        onclick="UI.filterByTag('${tag}')">
+                    #${tag}
+                    <span class="tag-count">${count}</span>
+                </button>
+            `;
+        }).join('');
+    },
+
+    // New: Filter by specific tag (called from Cloud or Reader)
+    filterByTag(tag) {
+        // Toggle if clicking same tag
+        if (this.currentTagFilter === tag) {
+            this.currentTagFilter = null;
+        } else {
+            this.currentTagFilter = tag;
+        }
+
+        // Update UI
+        this.renderTagCloud(); // Re-render to show active state
+        this.applyFilters();
+
+        // Scroll to top of list
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     },
 
     // Update stats widget with analytics data

@@ -630,12 +630,48 @@ const Reader = {
         this.currentArticle.lastReadAt = new Date().toISOString();
         await Storage.updateArticle(article.id, { lastReadAt: this.currentArticle.lastReadAt });
 
+        // Update tag display
+        this.renderArticleTags();
+
         // Check if article already has content
         if (article.content && article.content.trim()) {
             this.showArticleView(article.content);
         } else {
             // Try to fetch content automatically
             await this.fetchArticleContent(article.url);
+        }
+    },
+
+    renderArticleTags() {
+        const metaContainer = this.elements.articleMeta;
+        // Keep the "View original" link
+        const originalLink = metaContainer.querySelector('#readerArticleLink');
+
+        // Create tags container if it doesn't exist
+        let tagsContainer = metaContainer.querySelector('.reader-tags');
+        if (!tagsContainer) {
+            tagsContainer = document.createElement('div');
+            tagsContainer.className = 'reader-tags';
+            metaContainer.appendChild(tagsContainer);
+        }
+
+        // Clear existing tags
+        tagsContainer.innerHTML = '';
+
+        if (this.currentArticle.tags && this.currentArticle.tags.length > 0) {
+            this.currentArticle.tags.forEach(tag => {
+                const tagEl = document.createElement('span');
+                tagEl.className = 'reader-tag';
+                tagEl.textContent = `#${tag}`;
+                tagEl.onclick = (e) => {
+                    e.preventDefault();
+                    this.close();
+                    if (typeof UI !== 'undefined' && UI.filterByTag) {
+                        UI.filterByTag(tag);
+                    }
+                };
+                tagsContainer.appendChild(tagEl);
+            });
         }
     },
 
@@ -648,43 +684,62 @@ const Reader = {
         const newTags = tagsText.split(',').map(t => t.trim()).filter(t => t);
 
         try {
-            await Storage.updateArticle(this.currentArticle.id, {
+            // Optimistically update local article object
+            this.currentArticle.category = newCategory;
+            this.currentArticle.tags = newTags;
+
+            // Attempt save
+            const result = await Storage.updateArticle(this.currentArticle.id, {
                 category: newCategory,
                 tags: newTags
             });
 
-            // Update current article object
-            this.currentArticle.category = newCategory;
-            this.currentArticle.tags = newTags;
+            // If result is explicitly false, throw to catch block (though Storage.updateArticle usually returns true or throws)
+            if (result === false) throw new Error("Storage update failed");
 
-            // Show success feedback
-            const btn = this.elements.saveMetadataBtn;
-            btn.classList.add('saved');
+            this.showSaveSuccess();
+        } catch (error) {
+            console.error('Failed to save metadata:', error);
+
+            // Critical fix: If we are offline or unauthorized, it might still have saved locally
+            // We'll check if it's a "real" failure or just a sync warning
+            if (error.message.includes('cloud storage') || error.message.includes('permission')) {
+                // Saved locally but failed cloud sync - this is arguably a "Success" for the user interface
+                console.log('Saved locally only (cloud sync failed)');
+                this.showSaveSuccess(true); // true = show "Saved Offline" warning if you wanted, but for now just show Saved
+            } else {
+                alert('Failed to save changes. Please try again.');
+            }
+        }
+    },
+
+    showSaveSuccess(isOffline = false) {
+        const btn = this.elements.saveMetadataBtn;
+        btn.classList.add('saved');
+        btn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            ${isOffline ? 'Saved (Local)' : 'Saved!'}
+        `;
+
+        // Refresh UI if available
+        if (typeof UI !== 'undefined' && UI.renderArticles) {
+            UI.renderArticles();
+        }
+
+        // Also update the tags displayed in the reader header immediately
+        this.renderArticleTags();
+
+        setTimeout(() => {
+            btn.classList.remove('saved');
             btn.innerHTML = `
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12"></polyline>
                 </svg>
-                Saved!
+                Save Changes
             `;
-
-            setTimeout(() => {
-                btn.classList.remove('saved');
-                btn.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20 6 9 17 4 12"></polyline>
-                    </svg>
-                    Save Changes
-                `;
-            }, 2000);
-
-            // Refresh the article list if UI is available
-            if (typeof UI !== 'undefined' && UI.renderArticles) {
-                UI.renderArticles();
-            }
-        } catch (error) {
-            console.error('Failed to save metadata:', error);
-            alert('Failed to save changes. Please try again.');
-        }
+        }, 2000);
     },
 
     async fetchArticleContent(url) {

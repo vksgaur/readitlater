@@ -409,6 +409,28 @@
     text-decoration: underline;
 }
 
+.reader-tags {
+    margin-top: var(--spacing-sm);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.reader-tag {
+    font-size: 0.85rem;
+    color: var(--accent-primary);
+    background: rgba(100, 116, 139, 0.1);
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.reader-tag:hover {
+    background: rgba(100, 116, 139, 0.2);
+    text-decoration: underline;
+}
+
 .reader-body {
     font-size: 1.125rem;
     line-height: 1.8;
