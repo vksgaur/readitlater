@@ -826,9 +826,8 @@ const FolderManager = {
 const UI = {
     elements: {},
     currentFilter: 'all',
-    currentCategoryFilter: 'all',
-    currentTagFilter: '',
     currentFolderFilter: null,
+    currentTagFilter: '',
     searchQuery: '',
     cachedArticles: [],
     selectedArticles: [], // For bulk actions
@@ -881,15 +880,15 @@ const UI = {
             addForm: document.getElementById('addForm'),
             urlInput: document.getElementById('urlInput'),
             titleInput: document.getElementById('titleInput'),
-            categorySelect: document.getElementById('categorySelect'),
             searchInput: document.getElementById('searchInput'),
             articlesGrid: document.getElementById('articlesGrid'),
             emptyState: document.getElementById('emptyState'),
             loadingState: document.getElementById('loadingState'),
-            filterTabs: document.querySelectorAll('.filter-tab'),
-            categoryFilter: document.getElementById('categoryFilter'),
-            totalCount: document.querySelector('#totalCount .stat-value'),
-            unreadCount: document.querySelector('#unreadCount .stat-value'),
+            navItems: document.querySelectorAll('.nav-item'),
+            folderList: document.getElementById('folderList'),
+            addFolderBtn: document.getElementById('addFolderBtn'),
+            totalCount: document.getElementById('totalCount'),
+            // Auth elements
             signInBtn: document.getElementById('signInBtn'),
             signOutBtn: document.getElementById('signOutBtn'),
             userProfile: document.getElementById('userProfile'),
@@ -901,7 +900,7 @@ const UI = {
             addBtn: document.getElementById('addButton'),
             tagsInput: document.getElementById('tagsInput'),
             tagsFilterContainer: document.getElementById('tagsFilterContainer'),
-            // Stats widget elements
+            // Stats widget elements (optional, if kept)
             statsWidget: document.getElementById('statsWidget'),
             statStreak: document.getElementById('statStreak'),
             statTotal: document.getElementById('statTotal'),
@@ -923,21 +922,28 @@ const UI = {
             this.applyFilters();
         });
 
-        // Filter tabs
-        this.elements.filterTabs.forEach(tab => {
-            tab.addEventListener('click', () => {
-                this.elements.filterTabs.forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                this.currentFilter = tab.dataset.filter;
-                this.applyFilters();
+        // Sidebar Navigation (All, Favorites, Archive)
+        this.elements.navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                const filter = item.dataset.filter;
+                this.setFilter(filter);
+
+                // Update active state
+                this.elements.navItems.forEach(nav => nav.classList.remove('active'));
+                item.classList.add('active');
+
+                // Clear folder selection
+                this.currentFolderFilter = null;
+                this.renderFolderList(); // Re-render to remove active class from folders
             });
         });
 
-        // Category filter
-        this.elements.categoryFilter.addEventListener('change', (e) => {
-            this.currentCategoryFilter = e.target.value;
-            this.applyFilters();
-        });
+        // Add Folder Button
+        if (this.elements.addFolderBtn) {
+            this.elements.addFolderBtn.addEventListener('click', () => {
+                this.handleAddFolder();
+            });
+        }
 
         // Auth buttons
         this.elements.signInBtn.addEventListener('click', () => {
@@ -965,7 +971,9 @@ const UI = {
     async handleAddArticle() {
         const url = this.elements.urlInput.value.trim();
         let title = this.elements.titleInput.value.trim();
-        const category = this.elements.categorySelect.value;
+
+        // Use current folder if selected
+        const folderId = this.currentFolderFilter;
 
         if (!this.validateUrl(url)) {
             this.showError('Please enter a valid URL');
@@ -1006,10 +1014,11 @@ const UI = {
             console.log('Could not fetch article data:', error.message);
         }
 
-        const article = new Article(url, title, category, {
+        const article = new Article(url, title, 'general', { // Default category 'general' as fallback
             thumbnail: articleData.image || '',
             readingTime: articleData.readingTime || 0,
-            tags: tags
+            tags: tags,
+            folderId: folderId
         });
 
         // Store content if fetched
@@ -1020,7 +1029,7 @@ const UI = {
         if (await Storage.addArticle(article)) {
             this.elements.urlInput.value = '';
             this.elements.titleInput.value = '';
-            this.elements.categorySelect.value = 'poem';
+            // Category select removed
             if (this.elements.tagsInput) this.elements.tagsInput.value = '';
 
             // Update tags filter
@@ -1047,6 +1056,68 @@ const UI = {
         } catch {
             return false;
         }
+    },
+
+    // Folder Management
+    handleAddFolder() {
+        const name = prompt('Enter folder name:');
+        if (name && name.trim()) {
+            FolderManager.addFolder(name.trim());
+            this.renderFolderList();
+        }
+    },
+
+    handleDeleteFolder(id, event) {
+        event.stopPropagation();
+        if (confirm('Delete this folder? Articles will remain in "All Articles".')) {
+            FolderManager.deleteFolder(id);
+            // If current folder was deleted, switch to all
+            if (this.currentFolderFilter === id) {
+                this.currentFolderFilter = null;
+                this.setFilter('all');
+            }
+            this.renderFolderList();
+        }
+    },
+
+    setFilter(filter) {
+        this.currentFilter = filter;
+        this.applyFilters();
+    },
+
+    renderFolderList() {
+        const folders = FolderManager.getFolders();
+        const listEl = this.elements.folderList;
+        if (!listEl) return;
+
+        listEl.innerHTML = folders.map(folder => `
+            <div class="nav-item folder-item ${this.currentFolderFilter === folder.id ? 'active' : ''}" 
+                 onclick="UI.handleFolderClick('${folder.id}')">
+                <span class="folder-name">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: ${folder.color}">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    ${this.escapeHtml(folder.name)}
+                </span>
+                <button class="btn-icon delete-folder" onclick="UI.handleDeleteFolder('${folder.id}', event)" title="Delete Folder">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+        `).join('');
+    },
+
+    handleFolderClick(folderId) {
+        this.currentFolderFilter = folderId;
+        this.currentFilter = 'folder'; // Internal state to know we are in folder mode
+
+        // Update UI active states
+        this.elements.navItems.forEach(nav => nav.classList.remove('active'));
+        this.renderFolderList(); // Re-render to update active class
+
+        this.applyFilters();
     },
 
     // Normalize URL for duplicate detection (removes protocol, www, trailing slash)
@@ -1125,10 +1196,10 @@ const UI = {
             filtered = filtered.filter(a => !a.isArchived);
         }
 
-        // Category filter
-        if (this.currentCategoryFilter !== 'all') {
+        // Category filter removed
+        /* if (this.currentCategoryFilter !== 'all') {
             filtered = filtered.filter(a => a.category === this.currentCategoryFilter);
-        }
+        } */
 
         // Folder filter
         if (this.currentFolderFilter) {
@@ -1192,6 +1263,7 @@ const UI = {
 
     render() {
         this.cachedArticles = Storage.getArticles();
+        this.renderFolderList(); // New: Render folders
         this.renderTagCloud(); // Build tag cloud from articles
         this.updateTagsFilter();
         this.applyFilters();

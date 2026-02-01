@@ -192,17 +192,7 @@ const Reader = {
                                     </div>
                                 </div>
                                 <hr class="settings-divider">
-                                <div class="settings-group">
-                                    <span class="settings-label">Article Category</span>
-                                    <select class="metadata-select" id="readerCategorySelect">
-                                        <option value="general">General</option>
-                                        <option value="tech">Tech</option>
-                                        <option value="news">News</option>
-                                        <option value="design">Design</option>
-                                        <option value="productivity">Productivity</option>
-                                        <option value="entertainment">Entertainment</option>
-                                    </select>
-                                </div>
+
                                 <div class="settings-group">
                                     <span class="settings-label">Tags</span>
                                     <input type="text" class="metadata-input" id="readerTagsInput" placeholder="ai, webdev, important">
@@ -603,9 +593,6 @@ const Reader = {
         this.elements.articleLink.href = article.url;
 
         // Populate metadata editor fields
-        if (this.elements.categorySelect) {
-            this.elements.categorySelect.value = article.category || 'general';
-        }
         if (this.elements.tagsInput) {
             this.elements.tagsInput.value = (article.tags || []).join(', ');
         }
@@ -679,7 +666,6 @@ const Reader = {
     async saveMetadata() {
         if (!this.currentArticle) return;
 
-        const newCategory = this.elements.categorySelect?.value || 'general';
         const tagsText = this.elements.tagsInput?.value || '';
 
         // Normalize tags: Check against existing global tags to prevent case-duplicates
@@ -705,12 +691,10 @@ const Reader = {
 
         try {
             // Optimistically update local article object
-            this.currentArticle.category = newCategory;
             this.currentArticle.tags = newTags;
 
             // Attempt save
             const result = await Storage.updateArticle(this.currentArticle.id, {
-                category: newCategory,
                 tags: newTags
             });
 
@@ -721,12 +705,11 @@ const Reader = {
         } catch (error) {
             console.error('Failed to save metadata:', error);
 
-            // Critical fix: If we are offline or unauthorized, it might still have saved locally
-            // We'll check if it's a "real" failure or just a sync warning
-            if (error.message.includes('cloud storage') || error.message.includes('permission')) {
-                // Saved locally but failed cloud sync - this is arguably a "Success" for the user interface
+            // Fix: If local save worked but cloud failed, don't scare the user
+            // Storage.updateArticle saves to local storage first, so we can assume local is good
+            if (error.message.includes('cloud storage') || error.message.includes('permission') || error.message.includes('offline')) {
                 console.log('Saved locally only (cloud sync failed)');
-                this.showSaveSuccess(true); // true = show "Saved Offline" warning if you wanted, but for now just show Saved
+                this.showSaveSuccess(true); // Show "Saved (Local)"
             } else {
                 alert('Failed to save changes. Please try again.');
             }
@@ -1189,6 +1172,90 @@ const Reader = {
     },
 
     // Export highlights to PDF via print dialog
+    handleTextSelection(e) {
+        const selection = window.getSelection();
+        const text = selection.toString().trim();
+
+        if (text.length > 0) {
+            // Show popup at selection coordinates
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+
+            // Calculate position relative to viewport, handling scroll
+            const top = rect.top - 50; // Place above text
+            const left = rect.left + (rect.width / 2) - 100; // Center horizontally
+
+            this.elements.highlightPopup.style.top = `${Math.max(10, top)}px`;
+            this.elements.highlightPopup.style.left = `${Math.max(10, left)}px`;
+            this.elements.highlightPopup.classList.add('active');
+
+            // Store range for later use
+            this.currentSelectionRange = range;
+        } else {
+            this.hideHighlightPopup();
+        }
+    },
+
+    hideHighlightPopup() {
+        this.elements.highlightPopup.classList.remove('active');
+        this.currentSelectionRange = null;
+    },
+
+    createHighlightFromSelection(color) {
+        if (!this.currentSelectionRange) return;
+
+        try {
+            const selection = window.getSelection();
+            if (!selection.rangeCount) return;
+
+            const range = this.currentSelectionRange;
+            const text = selection.toString();
+
+            // Create highlight object
+            const highlight = {
+                id: Date.now().toString(),
+                text: text,
+                color: color,
+                note: '',
+                date: new Date().toISOString(),
+                // Simple serialization for now (start/end offsets would be better for robust restoration)
+                cfi: null
+            };
+
+            // Wrap text in span
+            const span = document.createElement('span');
+            span.className = `highlight ${color}`;
+            span.textContent = text;
+            span.dataset.id = highlight.id;
+            span.onclick = (e) => {
+                e.stopPropagation();
+                this.openNoteModal(highlight.id);
+            };
+
+            range.deleteContents();
+            range.insertNode(span);
+
+            // Add to article
+            this.highlights.push(highlight);
+            this.currentArticle.highlights = this.highlights;
+
+            // Save
+            this.saveArticle();
+
+            // UI Updates
+            this.updateHighlightCount();
+            this.renderHighlightsList();
+            this.hideHighlightPopup();
+
+            // Clear selection
+            selection.removeAllRanges();
+
+        } catch (e) {
+            console.error('Error creating highlight:', e);
+            alert('Could not create highlight. Try selecting a smaller text block.');
+        }
+    },
+
     exportHighlightsToPDF() {
         if (this.highlights.length === 0) {
             alert('No highlights to export');

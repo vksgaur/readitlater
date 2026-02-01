@@ -9,12 +9,13 @@
     <title>Margins - Your Reading List</title>
 
     <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#0d1117">
+    <meta name="theme-color" content="#161b22">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Margins">
     <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="icon" type="image/svg+xml" href="icons/favicon.svg">
+    <link rel="apple-touch-icon" href="icons/icon-192.svg">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -27,243 +28,199 @@
 
 <body>
     <div class="app-container">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-content">
-                <a href="./" class="logo" id="logoLink">
+        <!-- Sidebar -->
+        <aside class="app-sidebar">
+            <div class="sidebar-header">
+                <a href="./" class="logo">
                     <h1>Margins</h1>
                     <span class="logo-mark">❝</span>
                 </a>
+            </div>
 
-                <!-- Auth & Stats Section -->
-                <div class="header-right">
-                    <div class="stats">
-                        <span class="stat" id="totalCount">
-                            <span class="stat-value">0</span>
-                            <span class="stat-label">Total</span>
-                        </span>
-                        <span class="stat" id="unreadCount">
-                            <span class="stat-value">0</span>
-                            <span class="stat-label">Unread</span>
-                        </span>
-                    </div>
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-filter="all">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    All Articles
+                </button>
+                <button class="nav-item" data-filter="favorites">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon
+                            points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2">
+                        </polygon>
+                    </svg>
+                    Favorites
+                </button>
+                <button class="nav-item" data-filter="archived">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                        <rect x="1" y="3" width="22" height="5"></rect>
+                        <line x1="10" y1="12" x2="14" y2="12"></line>
+                    </svg>
+                    Archive
+                </button>
+            </nav>
 
-                    <!-- Theme Toggle -->
-                    <button class="btn-theme-toggle" id="themeToggle" title="Toggle theme">
-                        <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18"
-                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="5"></circle>
-                            <line x1="12" y1="1" x2="12" y2="3"></line>
-                            <line x1="12" y1="21" x2="12" y2="23"></line>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                            <line x1="1" y1="12" x2="3" y2="12"></line>
-                            <line x1="21" y1="12" x2="23" y2="12"></line>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                        </svg>
-                        <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18"
-                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            <div class="folders-section">
+                <div class="section-header">
+                    <span>FOLDERS</span>
+                    <button class="btn-icon" id="addFolderBtn" title="New Folder">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
                         </svg>
                     </button>
+                </div>
+                <div id="folderList" class="folder-list">
+                    <!-- Folders populated via JS -->
+                </div>
+            </div>
 
-                    <!-- Sync Status -->
-                    <div class="sync-status" id="syncStatus" title="Sync status">
-                        <svg class="sync-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="23 4 23 10 17 10"></polyline>
-                            <polyline points="1 20 1 14 7 14"></polyline>
-                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            <!-- Auth & Stats in Sidebar Bottom -->
+            <div class="sidebar-footer">
+                <div class="stats-mini">
+                    <span id="totalCount">0 items</span>
+                </div>
+                <!-- Theme Toggle -->
+                <button class="btn-theme-toggle" id="themeToggle" title="Toggle theme">
+                    <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                    <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <div class="app-main">
+            <!-- Header (Search & Actions) -->
+            <header class="header">
+                <div class="header-content">
+                    <div class="search-box">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                         </svg>
-                        <span class="sync-text">Local</span>
+                        <input type="text" id="searchInput" placeholder="Search articles...">
                     </div>
 
-                    <!-- Auth UI -->
-                    <div class="auth-section" id="authSection">
-                        <!-- Signed Out State -->
-                        <button class="btn-signin" id="signInBtn">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24">
-                                <path fill="#4285F4"
-                                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                                <path fill="#34A853"
-                                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                                <path fill="#FBBC05"
-                                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                                <path fill="#EA4335"
-                                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                    <div class="header-actions">
+                        <!-- Sync Status -->
+                        <div class="sync-status" id="syncStatus" title="Sync status">
+                            <svg class="sync-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <polyline points="1 20 1 14 7 14"></polyline>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
                             </svg>
-                            Sign in with Google
-                        </button>
+                        </div>
 
-                        <!-- Signed In State -->
-                        <div class="user-profile" id="userProfile" style="display: none;">
-                            <img class="user-avatar" id="userAvatar" src="" alt="User avatar">
-                            <span class="user-name" id="userName"></span>
-                            <button class="btn-signout" id="signOutBtn" title="Sign out">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                        <!-- Auth UI -->
+                        <div class="auth-section" id="authSection">
+                            <!-- Signed Out State -->
+                            <button class="btn-signin" id="signInBtn">Sign in</button>
+                            <!-- Signed In State -->
+                            <div class="user-profile" id="userProfile" style="display: none;">
+                                <img class="user-avatar" id="userAvatar" src="" alt="User avatar">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Firebase Config Notice -->
+            <div class="config-notice" id="configNotice">
+                <!-- ... existing notice content ... -->
+                <div class="notice-content">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <span>Firebase not configured. Articles are saved locally only. <a href="firebase-config.js"
+                            target="_blank">Configure Firebase</a> for cloud sync.</span>
+                    <button class="notice-dismiss" id="dismissNotice">×</button>
+                </div>
+            </div>
+
+            <main class="main-content">
+                <!-- Add Article Form -->
+                <section class="add-section">
+                    <form id="addForm" class="add-form">
+                        <div class="form-row">
+                            <div class="input-group url-input">
+                                <input type="url" id="urlInput" placeholder="Save a new link..." required
+                                    autocomplete="off">
+                            </div>
+                            <button type="submit" class="btn-add" id="addButton">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
                                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                                     stroke-linejoin="round">
-                                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                                    <polyline points="16 17 21 12 16 7"></polyline>
-                                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
                                 </svg>
+                                Add
                             </button>
                         </div>
-                    </div>
-                </div>
-            </div>
-        </header>
+                        <!-- Detailed inputs hidden or separate modal? For now simplified inline -->
+                        <div class="form-row secondary-inputs" style="display:none"> <!-- potentially expandable -->
+                            <input type="text" id="titleInput" placeholder="Title">
+                            <input type="text" id="tagsInput" placeholder="Tags">
+                        </div>
+                    </form>
+                </section>
 
-        <!-- Firebase Config Notice -->
-        <div class="config-notice" id="configNotice">
-            <div class="notice-content">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
-                <span>Firebase not configured. Articles are saved locally only. <a href="firebase-config.js"
-                        target="_blank">Configure Firebase</a> for cloud sync.</span>
-                <button class="notice-dismiss" id="dismissNotice">×</button>
-            </div>
+                <!-- Articles Grid -->
+                <section class="articles-section">
+                    <div class="loading-state" id="loadingState">
+                        <div class="loading-spinner"></div>
+                        <p>Loading articles...</p>
+                    </div>
+
+                    <div class="articles-grid" id="articlesGrid">
+                        <!-- Articles will be rendered here -->
+                    </div>
+
+                    <div class="empty-state" id="emptyState">
+                        <div class="empty-icon">
+                            <span class="empty-quote">❝</span>
+                        </div>
+                        <h3>Your reading list is empty</h3>
+                        <p>Save an article to get started</p>
+                    </div>
+                </section>
+            </main>
         </div>
-
-        <!-- Reading Stats Widget -->
-        <div class="stats-widget" id="statsWidget">
-            <div class="stat-item">
-                <span class="stat-value" id="statStreak">0</span>
-                <span class="stat-label">🔥 Day Streak</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-value" id="statTotal">0</span>
-                <span class="stat-label">📚 Articles</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-value" id="statRead">0</span>
-                <span class="stat-label">✓ Read</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-value" id="statTime">0m</span>
-                <span class="stat-label">⏱️ Read Time</span>
-            </div>
-        </div>
-
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Add Article Form -->
-            <section class="add-section">
-                <form id="addForm" class="add-form">
-                    <div class="form-row">
-                        <div class="input-group url-input">
-                            <label for="urlInput">URL</label>
-                            <input type="url" id="urlInput" placeholder="https://example.com/article" required
-                                autocomplete="off">
-                        </div>
-                        <div class="input-group title-input">
-                            <label for="titleInput">Title (optional)</label>
-                            <input type="text" id="titleInput" placeholder="Custom title..." autocomplete="off">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="input-group category-input">
-                            <label for="categorySelect">Category</label>
-                            <select id="categorySelect">
-                                <option value="poem">Poem</option>
-                                <option value="short-story">Short Story</option>
-                                <option value="finance">Finance</option>
-                                <option value="deep">Deep</option>
-                                <option value="other">Other</option>
-                            </select>
-                        </div>
-                        <div class="input-group tags-input">
-                            <label for="tagsInput">Tags (optional)</label>
-                            <input type="text" id="tagsInput" placeholder="e.g., motivation, life" autocomplete="off">
-                        </div>
-                        <button type="submit" class="btn-add" id="addButton">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
-                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                stroke-linejoin="round">
-                                <line x1="12" y1="5" x2="12" y2="19"></line>
-                                <line x1="5" y1="12" x2="19" y2="12"></line>
-                            </svg>
-                            Add Article
-                        </button>
-                    </div>
-                </form>
-            </section>
-
-            <!-- Filters & Search -->
-            <section class="filters-section">
-                <div class="search-box">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="11" cy="11" r="8"></circle>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                    </svg>
-                    <input type="text" id="searchInput" placeholder="Search articles...">
-                </div>
-                <div class="filter-tabs">
-                    <button class="filter-tab active" data-filter="all">All</button>
-                    <button class="filter-tab" data-filter="unread">Unread</button>
-                    <button class="filter-tab" data-filter="read">Read</button>
-                    <button class="filter-tab" data-filter="favorites">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                            fill="currentColor" stroke="currentColor" stroke-width="2">
-                            <polygon
-                                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2">
-                            </polygon>
-                        </svg>
-                        Favorites
-                    </button>
-                    <button class="filter-tab" data-filter="archived">Archive</button>
-                </div>
-                <div class="category-filter">
-                    <select id="categoryFilter">
-                        <option value="all">All Categories</option>
-                        <option value="poem">Poem</option>
-                        <option value="short-story">Short Story</option>
-                        <option value="finance">Finance</option>
-                        <option value="deep">Deep</option>
-                        <option value="other">Other</option>
-                    </select>
-                </div>
-                <div class="tags-filter" id="tagsFilterContainer">
-                    <!-- Tags will be populated dynamically -->
-                </div>
-            </section>
-
-            <!-- Articles List -->
-            <section class="articles-section">
-                <!-- Loading State -->
-                <div class="loading-state" id="loadingState">
-                    <div class="loading-spinner"></div>
-                    <p>Loading articles...</p>
-                </div>
-
-                <div class="articles-grid" id="articlesGrid">
-                    <!-- Articles will be rendered here -->
-                </div>
-
-                <!-- Empty State -->
-                <div class="empty-state" id="emptyState">
-                    <div class="empty-icon">
-                        <span class="empty-quote">❝</span>
-                    </div>
-                    <h3>Your reading list is empty</h3>
-                    <p>Save an article to get started</p>
-                </div>
-            </section>
-        </main>
-
-        <footer class="footer">
-            <p>Margins — Your curated reading list</p>
-        </footer>
     </div>
+    <footer class="footer">
+        <p>Margins — Your curated reading list</p>
+    </footer>
 
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>

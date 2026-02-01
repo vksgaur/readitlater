@@ -4,8 +4,8 @@
     "description": "Your curated reading list. Save articles, highlight passages, and read on your terms.",
     "start_url": "/",
     "display": "standalone",
-    "background_color": "#0d1117",
-    "theme_color": "#0d1117",
+    "background_color": "#161b22",
+    "theme_color": "#161b22",
     "orientation": "any",
     "icons": [
         {

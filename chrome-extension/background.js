@@ -3,11 +3,15 @@
  * Handles background tasks, context menus, and badge updates
  */
 
+import { firebaseConfig, isFirebaseConfigured } from './firebase-config.js';
+
 // ============================================
 // Constants
 // ============================================
 
 const STORAGE_KEY = 'readlater_articles';
+const AUTH_STORAGE_KEY = 'margins_auth';
+
 
 // ============================================
 // Installation & Startup
@@ -41,6 +45,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         const url = info.linkUrl || info.pageUrl;
         const title = tab?.title || extractDomain(url);
 
+        // Note: In background we can't easily scrape content/thumbnail without scripting
+        // We'll save the basic info and let the main app fetch metadata if needed later
+
         // Create article with default category
         const article = {
             id: generateId(),
@@ -60,8 +67,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             folderId: null,
             lastReadAt: null,
             readCount: 0,
-            totalReadTime: 0,
-            needsSync: true
+            totalReadTime: 0
         };
 
         try {
@@ -80,6 +86,29 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // ============================================
 
 async function saveArticle(article) {
+    // 1. Always save locally first (for speed and offline support)
+    await saveToLocal(article);
+
+    // 2. Try to save to Firestore if user is authenticated
+    try {
+        const authState = await getAuthState();
+        if (authState && authState.user && authState.idToken) {
+            // Check if token is expired
+            if (authState.expiresAt && Date.now() > authState.expiresAt) {
+                console.log('Auth token expired, skipping cloud sync');
+                return; // Just local save is fine, will sync next time app opens
+            }
+
+            await saveToFirestore(article, authState.user, authState.idToken);
+            console.log('Synced to Firestore successfully');
+        }
+    } catch (e) {
+        console.warn('Failed to sync to cloud (saved locally):', e);
+        // We don't throw here because local save was successful
+    }
+}
+
+async function saveToLocal(article) {
     return new Promise((resolve, reject) => {
         chrome.storage.local.get(STORAGE_KEY, (result) => {
             const articles = result[STORAGE_KEY] || [];
@@ -105,6 +134,71 @@ async function saveArticle(article) {
     });
 }
 
+// REST API Save mechanism (ported from popup.js)
+async function saveToFirestore(article, user, idToken) {
+    if (!isFirebaseConfigured()) return;
+
+    // Convert article to Firestore document format
+    const firestoreDoc = {
+        fields: {
+            url: { stringValue: article.url },
+            title: { stringValue: article.title },
+            category: { stringValue: article.category },
+            isRead: { booleanValue: article.isRead },
+            isFavorite: { booleanValue: article.isFavorite },
+            isArchived: { booleanValue: article.isArchived },
+            dateAdded: { stringValue: article.dateAdded },
+            tags: { arrayValue: { values: [] } }, // Empty tags for context menu save
+            thumbnail: { stringValue: article.thumbnail },
+            readingTime: { integerValue: String(article.readingTime || 0) },
+            content: { stringValue: article.content },
+            highlights: { arrayValue: { values: [] } },
+            readProgress: { integerValue: String(article.readProgress || 0) },
+            folderId: { nullValue: null },
+            lastReadAt: { nullValue: null },
+            readCount: { integerValue: String(article.readCount || 0) },
+            totalReadTime: { integerValue: String(article.totalReadTime || 0) }
+        }
+    };
+
+    const commitUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents:commit`;
+    const docPath = `projects/${firebaseConfig.projectId}/databases/(default)/documents/users/${user.uid}/articles/${article.id}`;
+
+    const commitBody = {
+        writes: [{
+            update: {
+                name: docPath,
+                fields: firestoreDoc.fields
+            }
+        }]
+    };
+
+    const response = await fetch(commitUrl, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${idToken}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(commitBody)
+    });
+
+    if (!response.ok) {
+        throw new Error(`Firestore error: ${response.status}`);
+    }
+}
+
+// ============================================
+// Auth Helpers
+// ============================================
+
+async function getAuthState() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(AUTH_STORAGE_KEY, (result) => {
+            resolve(result[AUTH_STORAGE_KEY]);
+        });
+    });
+}
+
 async function getUnreadCount() {
     return new Promise((resolve) => {
         chrome.storage.local.get(STORAGE_KEY, (result) => {
@@ -116,7 +210,7 @@ async function getUnreadCount() {
 }
 
 // ============================================
-// Badge Updates
+// Badge & UI Updates
 // ============================================
 
 async function updateBadge() {
@@ -134,12 +228,7 @@ async function updateBadge() {
     }
 }
 
-// ============================================
-// Notifications
-// ============================================
-
 function showNotification(title, message) {
-    // Simple notification using chrome.notifications if available
     if (chrome.notifications) {
         chrome.notifications.create({
             type: 'basic',
@@ -168,7 +257,7 @@ function extractDomain(url) {
 }
 
 // ============================================
-// Storage Change Listener
+// Listeners
 // ============================================
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -177,17 +266,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     }
 });
 
-// ============================================
-// Message Handler
-// ============================================
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     switch (message.type) {
         case 'GET_UNREAD_COUNT':
-            getUnreadCount().then(count => {
-                sendResponse({ count });
-            });
-            return true; // Keep channel open for async response
+            getUnreadCount().then(count => sendResponse({ count }));
+            return true;
 
         case 'UPDATE_BADGE':
             updateBadge();
@@ -195,6 +278,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             break;
 
         case 'SAVE_ARTICLE':
+            // Popup delegates saving to background sometimes, or we can just use the exposed helper
+            // Currently popup handles its own saving, but if it wanted to delegate:
             saveArticle(message.article)
                 .then(() => {
                     sendResponse({ success: true });
@@ -204,8 +289,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({ success: false, error: error.message });
                 });
             return true;
-
-        default:
-            sendResponse({ error: 'Unknown message type' });
     }
 });
