@@ -12,7 +12,7 @@
  * IMPORTANT: Replace the placeholder values below with your actual Firebase config!
  */
 
-const firebaseConfig = {
+var firebaseConfig = {
   apiKey: "AIzaSyCP2_uP-KVynVDJqEzDdhrD2cfL-Uu4pc8",
   authDomain: "readlater-10a14.firebaseapp.com",
   projectId: "readlater-10a14",
@@ -22,7 +22,7 @@ const firebaseConfig = {
 };
 
 // Check if Firebase is configured
-const isFirebaseConfigured = () => {
+var isFirebaseConfigured = () => {
   return firebaseConfig.apiKey !== "YOUR_API_KEY" &&
     firebaseConfig.projectId !== "YOUR_PROJECT_ID";
 };
