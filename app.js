@@ -888,6 +888,7 @@ const UI = {
             folderList: document.getElementById('folderList'),
             addFolderBtn: document.getElementById('addFolderBtn'),
             totalCount: document.getElementById('totalCount'),
+            unreadCount: document.getElementById('unreadCount'),
             // Auth elements
             signInBtn: document.getElementById('signInBtn'),
             signOutBtn: document.getElementById('signOutBtn'),
