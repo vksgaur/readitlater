@@ -126,13 +126,21 @@ const FirebaseService = {
                 UI.updateSyncStatus('synced');
                 this.subscribeToArticles();
             } else {
+                // User signed out
                 UI.showSignInButton();
                 UI.updateSyncStatus('local');
+
+                // Stop listening to Firestore updates
                 if (unsubscribeSnapshot) {
                     unsubscribeSnapshot();
                     unsubscribeSnapshot = null;
                 }
-                UI.render();
+
+                // Privacy: Clear local articles when signing out to prevent data leaking between users
+                localStorage.removeItem(STORAGE_KEY);
+
+                // Clear UI or render empty state
+                UI.renderArticles([]);
             }
         });
     },
@@ -189,9 +197,13 @@ const FirebaseService = {
                 console.log('Snapshot received, document count:', snapshot.size);
 
                 const articles = [];
-                snapshot.forEach(doc => {
-                    articles.push({ id: doc.id, ...doc.data() });
-                });
+                if (!snapshot.empty) {
+                    snapshot.forEach(doc => {
+                        articles.push({ id: doc.id, ...doc.data() });
+                    });
+                } else {
+                    console.log('No articles found in cloud.');
+                }
 
                 console.log('Articles loaded:', articles.length);
 
@@ -203,12 +215,16 @@ const FirebaseService = {
                 UI.updateSyncStatus('synced');
             }, error => {
                 console.error('Snapshot error:', error);
-                console.error('Error code:', error.code);
-                console.error('Error message:', error.message);
                 UI.updateSyncStatus('error');
                 UI.hideLoading();
-                // Fall back to localStorage
-                UI.render();
+
+                // If permission denied or other error, fallback to local but warn user
+                if (error.code === 'permission-denied') {
+                    alert('Access denied. Please check your account permissions.');
+                }
+
+                const localArticles = LocalStorage.getArticles();
+                UI.renderArticles(localArticles);
             });
     },
 

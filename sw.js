@@ -3,9 +3,9 @@
  * Provides offline capability and caching strategies
  */
 
-const CACHE_NAME = 'readlater-v1';
-const STATIC_CACHE = 'readlater-static-v1';
-const DYNAMIC_CACHE = 'readlater-dynamic-v1';
+const CACHE_NAME = 'readlater-v2';
+const STATIC_CACHE = 'readlater-static-v2';
+const DYNAMIC_CACHE = 'readlater-dynamic-v2';
 
 // Static assets to cache on install
 const STATIC_ASSETS = [
