@@ -199,7 +199,17 @@ const FirebaseService = {
                 const articles = [];
                 if (!snapshot.empty) {
                     snapshot.forEach(doc => {
-                        articles.push({ id: doc.id, ...doc.data() });
+                        const data = doc.data();
+                        articles.push({
+                            id: doc.id,
+                            ...data,
+                            // Ensure defaults for critical fields
+                            folderId: data.folderId || null,
+                            isArchived: data.isArchived || false,
+                            isRead: data.isRead || false,
+                            tags: data.tags || [],
+                            dateAdded: data.dateAdded || new Date().toISOString()
+                        });
                     });
                 } else {
                     console.log('No articles found in cloud.');
@@ -1163,9 +1173,11 @@ const UI = {
     },
 
     async handleDelete(id) {
-        if (await Storage.deleteArticle(id)) {
-            if (!currentUser || !FirebaseService.isConfigured) {
-                this.render();
+        if (confirm('Are you sure you want to delete this article?')) {
+            if (await Storage.deleteArticle(id)) {
+                if (!currentUser || !FirebaseService.isConfigured) {
+                    this.render();
+                }
             }
         }
     },
@@ -1191,6 +1203,34 @@ const UI = {
             }
         }
     },
+
+    handleOpen(url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+    },
+
+    getFilteredArticles(articles) {
+        let filtered = [...articles];
+
+        // Handle special filters
+        if (this.currentFilter === 'favorites') {
+            filtered = filtered.filter(a => a.isFavorite && !a.isArchived);
+        } else if (this.currentFilter === 'archived') {
+            filtered = filtered.filter(a => a.isArchived);
+        } else if (this.currentFilter === 'read') {
+            filtered = filtered.filter(a => a.isRead && !a.isArchived);
+        } else if (this.currentFilter === 'unread') {
+            filtered = filtered.filter(a => !a.isRead && !a.isArchived);
+        } else {
+            // 'all' filter excludes archived articles
+            filtered = filtered.filter(a => !a.isArchived);
+        }
+
+        // ... rest of filtering
+        return filtered;
+    },
+
+    // ... (skipping renderArticleCard definition which is confusing to replace this way, wait)
+
 
     handleOpen(url) {
         window.open(url, '_blank', 'noopener,noreferrer');
@@ -1482,12 +1522,21 @@ const UI = {
                         </svg>
                         ${toggleText}
                     </button>
-                    <button class="btn-action btn-archive" data-action="archive" data-id="${article.id}" title="${article.isArchived ? 'Unarchive' : 'Archive'}">
+                    <button class="btn-action btn-archive ${article.isArchived ? 'active' : ''}" data-action="archive" data-id="${article.id}" title="${article.isArchived ? 'Unarchive' : 'Archive'}">
+                        ${article.isArchived ? `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                            <rect x="1" y="3" width="22" height="5"></rect>
+                            <line x1="12" y1="17" x2="12" y2="10"></line>
+                            <polyline points="9 13 12 10 15 13"></polyline>
+                        </svg>
+                        ` : `
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="21 8 21 21 3 21 3 8"></polyline>
                             <rect x="1" y="3" width="22" height="5"></rect>
                             <line x1="10" y1="12" x2="14" y2="12"></line>
                         </svg>
+                        `}
                     </button>
                     <button class="btn-action btn-delete" data-action="delete" data-id="${article.id}">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -1132,10 +1132,15 @@ const Reader = {
 
     async saveArticle() {
         // Update article in storage
-        await Storage.updateArticle(this.currentArticle.id, {
-            content: this.currentArticle.content,
-            highlights: this.highlights
-        });
+        try {
+            await Storage.updateArticle(this.currentArticle.id, {
+                content: this.currentArticle.content,
+                highlights: this.highlights
+            });
+        } catch (error) {
+            console.warn('Cloud sync failed, saved locally:', error);
+            // Optional: Show a toast notification here
+        }
     },
 
     exportHighlights() {
