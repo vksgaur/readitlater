@@ -4,18 +4,28 @@
  */
 
 :root {
-    --bg-primary: #0d1117;
-    --bg-secondary: #161b22;
+    /* Colors - Dark Theme (Default) - MATCHING MAIN APP */
+    --bg-primary: #161b22;
+    --bg-secondary: #0d1117;
     --bg-tertiary: #21262d;
-    --border-color: #30363d;
+    --bg-card: #161b22;
+    --bg-card-hover: #1c2128;
+
     --text-primary: #e6edf3;
     --text-secondary: #8b949e;
     --text-muted: #6e7681;
-    --accent-color: #6366f1;
-    --accent-hover: #818cf8;
-    --success-color: #22c55e;
-    --error-color: #ef4444;
-    --warning-color: #f59e0b;
+
+    /* Accent - Warm Amber */
+    --accent-color: #f0b429;
+    --accent-hover: #d4a017;
+    --accent-glow: rgba(240, 180, 41, 0.15);
+
+    /* Status Colors */
+    --success-color: #56d364;
+    --warning-color: #f0b429;
+    --error-color: #f85149;
+
+    --border-color: rgba(240, 246, 252, 0.1);
 }
 
 * {
@@ -229,7 +239,8 @@ body {
     background: var(--accent-color);
     border: none;
     border-radius: 8px;
-    color: white;
+    color: var(--bg-primary);
+    /* Dark text on amber */
     font-size: 14px;
     font-weight: 600;
     font-family: inherit;

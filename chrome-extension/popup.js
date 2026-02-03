@@ -96,6 +96,28 @@ async function getCurrentTab() {
             currentTab = tab;
             elements.pageUrl.textContent = tab.url;
             elements.titleInput.value = tab.title || '';
+
+            // Try to execute script to get description and image
+            try {
+                const results = await chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    function: () => {
+                        const description = document.querySelector('meta[name="description"]')?.content
+                            || document.querySelector('meta[property="og:description"]')?.content
+                            || '';
+                        const image = document.querySelector('meta[property="og:image"]')?.content
+                            || document.querySelector('meta[name="twitter:image"]')?.content
+                            || '';
+                        return { description, image };
+                    }
+                });
+
+                if (results && results[0] && results[0].result) {
+                    currentTab.meta = results[0].result;
+                }
+            } catch (e) {
+                console.log('Script injection failed (likely restricted page):', e);
+            }
         }
     } catch (error) {
         console.error('Error getting current tab:', error);
@@ -314,9 +336,10 @@ async function handleSaveArticle(e) {
         isFavorite: false,
         isArchived: false,
         dateAdded: new Date().toISOString(),
-        thumbnail: '',
+        thumbnail: currentTab.meta?.image || '', // Use grabbed image
+        excerpt: currentTab.meta?.description || '', // Use grabbed description
         readingTime: 0,
-        content: '',
+        content: '', // Content fetching happens in app usually, or we can fetch here
         highlights: [],
         readProgress: 0,
         folderId: null,
@@ -393,15 +416,16 @@ async function saveToFirestore(article) {
                         : []
                 }
             },
-            thumbnail: { stringValue: article.thumbnail },
-            readingTime: { integerValue: String(article.readingTime) },
-            content: { stringValue: article.content },
+            thumbnail: { stringValue: article.thumbnail || '' },
+            excerpt: { stringValue: article.excerpt || '' }, // Save excerpt
+            readingTime: { integerValue: String(article.readingTime || 0) },
+            content: { stringValue: article.content || '' },
             highlights: { arrayValue: { values: [] } },
-            readProgress: { integerValue: String(article.readProgress) },
+            readProgress: { integerValue: String(article.readProgress || 0) },
             folderId: { nullValue: null },
             lastReadAt: { nullValue: null },
-            readCount: { integerValue: String(article.readCount) },
-            totalReadTime: { integerValue: String(article.totalReadTime) }
+            readCount: { integerValue: String(article.readCount || 0) },
+            totalReadTime: { integerValue: String(article.totalReadTime || 0) }
         }
     };
 
