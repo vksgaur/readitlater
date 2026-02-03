@@ -1644,6 +1644,131 @@ const UI = {
         this.elements.userProfile.style.display = 'none';
     },
 
+    // ============================================
+    // Kindle Import Logic
+    // ============================================
+
+    handleImportFile(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        this.processKindleFile(file);
+
+        // Reset input so same file can be selected again if needed
+        input.value = '';
+    },
+
+    processKindleFile(file) {
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+            const text = e.target.result;
+            const books = this.parseKindleClippings(text);
+
+            if (Object.keys(books).length > 0) {
+                this.saveImportedBooks(books);
+            } else {
+                this.showError('No valid clippings found in file.');
+            }
+        };
+
+        reader.readAsText(file);
+    },
+
+    parseKindleClippings(text) {
+        const clippings = text.split('==========');
+        const books = {};
+
+        clippings.forEach(clipping => {
+            const lines = clipping.trim().split('\n').filter(l => l.trim());
+            if (lines.length < 3) return;
+
+            const titleLine = lines[0].trim();
+            // Attempt to separate Author from Title (Title (Author))
+            let title = titleLine;
+            let author = 'Unknown Author';
+
+            const authorMatch = titleLine.match(/(.*)\s+\(([^)]+)\)$/);
+            if (authorMatch) {
+                title = authorMatch[1].trim();
+                author = authorMatch[2].trim();
+            }
+
+            // Extract content (last line usually)
+            const content = lines[lines.length - 1].trim();
+
+            // Skip non-highlight entries (like bookmarks)
+            if (content.startsWith('Your Bookmark') || content.startsWith('Your Note')) return;
+
+            if (!books[title]) {
+                books[title] = {
+                    title: title,
+                    author: author,
+                    highlights: []
+                };
+            }
+
+            books[title].highlights.push({
+                text: content,
+                id: `highlight_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                color: 'yellow', // Default Kindle color
+                timestamp: new Date().toISOString()
+            });
+        });
+
+        return books;
+    },
+
+    async saveImportedBooks(books) {
+        let addedCount = 0;
+        let updatedCount = 0;
+
+        for (const title in books) {
+            const book = books[title];
+
+            // Check if article with this title already exists
+            const existingArticles = Storage.getArticles();
+            const existing = existingArticles.find(a => a.title === book.title);
+
+            if (existing) {
+                // Merge highlights
+                const newHighlights = [...(existing.highlights || [])];
+
+                // Add only unique highlights (simple text check)
+                book.highlights.forEach(h => {
+                    if (!newHighlights.some(eh => eh.text === h.text)) {
+                        newHighlights.push(h);
+                    }
+                });
+
+                await Storage.updateArticle(existing.id, { highlights: newHighlights });
+                updatedCount++;
+            } else {
+                // Create new article
+                const article = {
+                    title: book.title,
+                    url: '#kindle-import', // Placeholder URL
+                    content: `Imported from Kindle\nAuthor: ${book.author}\n\n` +
+                        book.highlights.map(h => `> ${h.text}`).join('\n\n'),
+                    excerpt: `Imported Kindle Highlights for ${book.title}`,
+                    thumbnail: '', // No thumbnail
+                    category: 'other',
+                    tags: ['kindle', 'imported'],
+                    highlights: book.highlights,
+                    isRead: true, // Mark as read since it's a book you highlighted
+                    readingTime: Math.ceil(book.highlights.length / 5), // Rough estimate
+                    author: book.author
+                };
+
+                await Storage.addArticle(article);
+                addedCount++;
+            }
+        }
+
+        this.showSuccess(`Import Complete: ${addedCount} new books, ${updatedCount} updated.`);
+        this.render(); // Refresh UI
+    },
+
     showUserProfile(user) {
         this.elements.signInBtn.style.display = 'none';
         this.elements.userProfile.style.display = 'flex';
