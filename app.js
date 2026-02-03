@@ -374,7 +374,11 @@ const Storage = {
 
         // If signed in, also save to Firestore
         if (currentUser && FirebaseService.isConfigured) {
-            return await FirebaseService.addArticle(article);
+            try {
+                await FirebaseService.addArticle(article);
+            } catch (e) {
+                console.warn('Background sync add error:', e);
+            }
         }
         return true;
     },
@@ -385,13 +389,16 @@ const Storage = {
 
         // If signed in, also update Firestore
         if (currentUser && FirebaseService.isConfigured) {
-            const success = await FirebaseService.updateArticle(id, updates);
-            if (!success) {
-                throw new Error('Failed to sync with cloud storage');
+            try {
+                const success = await FirebaseService.updateArticle(id, updates);
+                if (!success) {
+                    console.warn('Background sync with cloud failed, but saved locally.');
+                }
+            } catch (e) {
+                console.warn('Background sync error:', e);
             }
-            return success;
         }
-        return true;
+        return true; // Always return true if local save succeeded
     },
 
     async deleteArticle(id) {
@@ -400,7 +407,11 @@ const Storage = {
 
         // If signed in, also delete from Firestore
         if (currentUser && FirebaseService.isConfigured) {
-            return await FirebaseService.deleteArticle(id);
+            try {
+                await FirebaseService.deleteArticle(id);
+            } catch (e) {
+                console.warn('Background sync delete error:', e);
+            }
         }
         return true;
     }
