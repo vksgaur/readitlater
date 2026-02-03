@@ -858,21 +858,48 @@ const UI = {
     cachedArticles: [],
     selectedArticles: [], // For bulk actions
     isSelectionMode: false,
+    viewMode: localStorage.getItem('readitlater_view_mode') || 'grid', // 'grid' or 'list'
 
     init() {
         this.cacheElements();
         this.bindEvents();
 
+        // Apply saved view mode
+        this.setViewMode(this.viewMode);
+
         // Initialize Firebase
         FirebaseService.init();
 
         // If not using Firebase or not signed in, render from localStorage
-        if (!FirebaseService.isConfigured || !currentUser) {
-            this.render();
+        // BUT, check if we are in a sub-route (Reader) first to avoid flashing Home
+        if (!window.location.hash.startsWith('#read/')) {
+            if (!FirebaseService.isConfigured || !currentUser) {
+                this.render();
+            }
         }
 
         // Handle bookmarklet URL parameters
         this.handleBookmarkletParams();
+    },
+
+    setViewMode(mode) {
+        this.viewMode = mode;
+        localStorage.setItem('readitlater_view_mode', mode);
+
+        // Update UI buttons
+        if (this.elements.viewGridBtn && this.elements.viewListBtn) {
+            if (mode === 'grid') {
+                this.elements.viewGridBtn.classList.add('active');
+                this.elements.viewListBtn.classList.remove('active');
+                this.elements.articlesGrid.classList.remove('view-list');
+                this.elements.articlesGrid.classList.add('view-grid');
+            } else {
+                this.elements.viewGridBtn.classList.remove('active');
+                this.elements.viewListBtn.classList.add('active');
+                this.elements.articlesGrid.classList.remove('view-grid');
+                this.elements.articlesGrid.classList.add('view-list');
+            }
+        }
     },
 
     // Handle URL parameters from bookmarklet
@@ -927,6 +954,9 @@ const UI = {
             addBtn: document.getElementById('addButton'),
             tagsInput: document.getElementById('tagsInput'),
             tagsFilterContainer: document.getElementById('tagsFilterContainer'),
+            // View Buttons
+            viewGridBtn: document.getElementById('viewGridBtn'),
+            viewListBtn: document.getElementById('viewListBtn'),
             // Stats widget elements (optional, if kept)
             statsWidget: document.getElementById('statsWidget'),
             statStreak: document.getElementById('statStreak'),
@@ -943,25 +973,36 @@ const UI = {
             this.handleAddArticle();
         });
 
+        // View Toggle Events
+        if (this.elements.viewGridBtn) {
+            this.elements.viewGridBtn.addEventListener('click', () => {
+                this.setViewMode('grid');
+            });
+        }
+        if (this.elements.viewListBtn) {
+            this.elements.viewListBtn.addEventListener('click', () => {
+                this.setViewMode('list');
+            });
+        }
+
         // Search input
         this.elements.searchInput.addEventListener('input', (e) => {
             this.searchQuery = e.target.value.toLowerCase();
             this.applyFilters();
         });
 
-        // Sidebar Navigation (All, Favorites, Archive)
+        // Sidebar Navigation
         this.elements.navItems.forEach(item => {
+            if (item.classList.contains('folder-item')) return; // handled by render
             item.addEventListener('click', () => {
                 const filter = item.dataset.filter;
                 this.setFilter(filter);
 
-                // Update active state
                 this.elements.navItems.forEach(nav => nav.classList.remove('active'));
                 item.classList.add('active');
 
-                // Clear folder selection
                 this.currentFolderFilter = null;
-                this.renderFolderList(); // Re-render to remove active class from folders
+                this.renderFolderList();
             });
         });
 
@@ -972,14 +1013,57 @@ const UI = {
             });
         }
 
-        // Auth buttons
+        // Auth & Profile Dropdown
         this.elements.signInBtn.addEventListener('click', () => {
             FirebaseService.signIn();
         });
 
-        this.elements.signOutBtn.addEventListener('click', () => {
-            FirebaseService.signOut();
-        });
+        // Profile Dropdown Trigger
+        const profileTrigger = document.getElementById('profileTrigger');
+        const profileDropdown = document.getElementById('profileDropdown');
+
+        if (profileTrigger && profileDropdown) {
+            // Toggle menu
+            profileTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isExpanded = profileTrigger.getAttribute('aria-expanded') === 'true';
+                profileTrigger.setAttribute('aria-expanded', !isExpanded);
+                profileDropdown.classList.toggle('show');
+            });
+
+            // Close when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!profileDropdown.contains(e.target) && !profileTrigger.contains(e.target)) {
+                    profileDropdown.classList.remove('show');
+                    profileTrigger.setAttribute('aria-expanded', 'false');
+                }
+            });
+
+            // Theme Toggle
+            const themeItem = document.getElementById('themeToggleItem');
+            if (themeItem) {
+                themeItem.addEventListener('click', () => {
+                    ThemeManager.toggle();
+                    document.getElementById('themeLabel').textContent =
+                        ThemeManager.getCurrentTheme() === 'dark' ? 'Light Mode' : 'Dark Mode';
+                });
+            }
+
+            // Export Data
+            const exportBtn = document.getElementById('exportDataBtn');
+            if (exportBtn) {
+                exportBtn.addEventListener('click', () => {
+                    this.handleExportData();
+                });
+            }
+        }
+
+        // Sign Out (in dropdown now)
+        if (this.elements.signOutBtn) {
+            this.elements.signOutBtn.addEventListener('click', () => {
+                FirebaseService.signOut();
+            });
+        }
 
         // Config notice dismiss
         this.elements.dismissNotice.addEventListener('click', () => {
@@ -993,6 +1077,38 @@ const UI = {
                 this.handleAddArticle();
             }
         });
+    },
+
+    // ... (rest of methods)
+
+    handleExportData() {
+        const articles = Storage.getArticles();
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(articles, null, 2));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", "readitlater_backup.json");
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+    },
+
+    // ... (rest of methods)
+
+    showUserProfile(user) {
+        this.elements.signInBtn.style.display = 'none';
+        this.elements.userProfile.style.display = 'block'; // Container display
+        this.elements.userAvatar.src = user.photoURL || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%236366f1"><circle cx="12" cy="8" r="4"/><path d="M12 14c-6 0-8 3-8 6v2h16v-2c0-3-2-6-8-6z"/></svg>';
+        this.elements.userName.textContent = user.displayName?.split(' ')[0] || 'User';
+
+        // Update email in dropdown
+        const emailEl = document.getElementById('userEmail');
+        if (emailEl) emailEl.textContent = user.email || 'No email';
+
+        // Update theme label
+        const themeLabel = document.getElementById('themeLabel');
+        if (themeLabel) {
+            themeLabel.textContent = ThemeManager.getCurrentTheme() === 'dark' ? 'Light Mode' : 'Dark Mode';
+        }
     },
 
     async handleAddArticle() {
@@ -1487,6 +1603,21 @@ const UI = {
         // Category display name
         const categoryDisplay = this.getCategoryDisplayName(article.category);
 
+        // Excerpt generation
+        let excerptHtml = '';
+        if (article.content) {
+            // Strip HTML tags and take first 150 chars
+            const textContent = article.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+            if (textContent) {
+                const excerpt = textContent.slice(0, 150) + (textContent.length > 150 ? '...' : '');
+                excerptHtml = `<p class="card-excerpt">${this.escapeHtml(excerpt)}</p>`;
+            }
+        }
+        if (!excerptHtml) {
+            // Optional: Placeholder text if no content
+            excerptHtml = `<p class="card-excerpt placeholder">No preview available</p>`;
+        }
+
         return `
             <article class="article-card ${cardClass} ${progressClass}" data-id="${article.id}">
                 ${thumbnailHtml}
@@ -1506,6 +1637,7 @@ const UI = {
                         ${this.escapeHtml(article.title)}
                     </a>
                 </h3>
+                ${excerptHtml}
                 ${tagsHtml}
                 <div class="card-meta">
                     <span>Added ${relativeTime}</span>
