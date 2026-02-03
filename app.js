@@ -962,16 +962,59 @@ const UI = {
             statStreak: document.getElementById('statStreak'),
             statTotal: document.getElementById('statTotal'),
             statRead: document.getElementById('statRead'),
-            statTime: document.getElementById('statTime')
+            statTime: document.getElementById('statTime'),
+            // Selection Mode
+            btnToggleSelection: document.getElementById('btnToggleSelection'),
+            selectionActions: document.getElementById('selectionActions'),
+            selectionCount: document.getElementById('selectionCount'),
+            btnBatchArchive: document.getElementById('btnBatchArchive'),
+            btnBatchDelete: document.getElementById('btnBatchDelete')
         };
     },
 
     bindEvents() {
+        // Selection Mode Events
+        if (this.elements.btnToggleSelection) {
+            this.elements.btnToggleSelection.addEventListener('click', () => this.toggleSelectionMode());
+        }
+        if (this.elements.btnBatchArchive) {
+            this.elements.btnBatchArchive.addEventListener('click', () => this.batchArchive());
+        }
+        if (this.elements.btnBatchDelete) {
+            this.elements.btnBatchDelete.addEventListener('click', () => this.batchDelete());
+        }
         // Form submission
         this.elements.addForm.addEventListener('submit', (e) => {
             e.preventDefault();
             this.handleAddArticle();
         });
+
+        // Surprise Me
+        const btnSurpriseMe = document.getElementById('btnSurpriseMe');
+        if (btnSurpriseMe) {
+            btnSurpriseMe.addEventListener('click', () => {
+                this.handleSurpriseMe();
+            });
+        }
+
+        // Selection Mode Card Click Delegate
+        if (this.elements.articlesGrid) {
+            this.elements.articlesGrid.addEventListener('click', (e) => {
+                if (!this.isSelectionMode) return;
+
+                // Allow card actions (like delete/archive buttons) to function normally?
+                // Or disable them? Usually disable actions in selection mode.
+
+                // Check if we clicked the card or inside it
+                const card = e.target.closest('.article-card');
+                if (card) {
+                    // Prevent other actions if in selection mode
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.toggleSelection(card.dataset.id);
+                }
+            }, true); // Capture phase to intervene before inner elements
+        }
 
         // View Toggle Events
         if (this.elements.viewGridBtn) {
@@ -990,6 +1033,41 @@ const UI = {
             this.searchQuery = e.target.value.toLowerCase();
             this.applyFilters();
         });
+
+        // Tag Autocomplete
+        if (this.elements.tagsInput) {
+            // Create suggestions container
+            const wrapper = this.elements.tagsInput.parentElement;
+            if (wrapper) {
+                wrapper.classList.add('tag-input-wrapper');
+                const suggestionsBox = document.createElement('div');
+                suggestionsBox.className = 'tag-suggestions';
+                wrapper.appendChild(suggestionsBox);
+                this.elements.tagSuggestions = suggestionsBox;
+
+                // Bind Input Event
+                this.elements.tagsInput.addEventListener('input', (e) => {
+                    this.handleTagInput(e.target.value);
+                });
+
+                // Hide on blur (delayed to allow click)
+                this.elements.tagsInput.addEventListener('blur', () => {
+                    setTimeout(() => {
+                        this.hideTagSuggestions();
+                    }, 200);
+                });
+
+                // Keyboard navigation for suggestions
+                this.elements.tagsInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Tab' || e.key === 'Enter') {
+                        const visible = this.elements.tagSuggestions.style.display === 'block';
+                        const firstItem = this.elements.tagSuggestions.querySelector('.tag-suggestion-item');
+                        // If suggestions visible and user hits tab/enter, select first one if explicit
+                        // For now, let's keep it simple: click to select
+                    }
+                });
+            }
+        }
 
         // Sidebar Navigation
         this.elements.navItems.forEach(item => {
@@ -1530,6 +1608,214 @@ const UI = {
         }
     },
 
+    // Tag Autocomplete Handlers
+    getAllUniqueTags() {
+        const articles = this.cachedArticles.length > 0 ? this.cachedArticles : Storage.getArticles();
+        const allTags = new Set();
+        articles.forEach(article => {
+            if (article.tags && Array.isArray(article.tags)) {
+                article.tags.forEach(tag => allTags.add(tag));
+            }
+        });
+        return Array.from(allTags).sort();
+    },
+
+    handleTagInput(value) {
+        if (!this.elements.tagSuggestions) return;
+
+        // Find current tag being typed (part after last comma)
+        const parts = value.split(',');
+        const currentPart = parts[parts.length - 1].trim().toLowerCase();
+
+        if (currentPart.length < 1) {
+            this.hideTagSuggestions();
+            return;
+        }
+
+        const allTags = this.getAllUniqueTags();
+        // Filter excluding tags already present in other parts
+        const existingTags = parts.slice(0, -1).map(p => p.trim().toLowerCase());
+
+        const matches = allTags.filter(tag =>
+            tag.toLowerCase().includes(currentPart) &&
+            !existingTags.includes(tag.toLowerCase()) &&
+            tag.toLowerCase() !== currentPart // exact match already typed? maybe still show case options
+        );
+
+        this.showTagSuggestions(matches, currentPart);
+    },
+
+    showTagSuggestions(matches, currentPart) {
+        if (matches.length === 0) {
+            this.hideTagSuggestions();
+            return;
+        }
+
+        this.elements.tagSuggestions.innerHTML = matches.map(tag => {
+            // Highlight match (simple regex)
+            const regex = new RegExp(`(${currentPart})`, 'gi');
+            const highlighted = tag.replace(regex, '<span class="match">$1</span>');
+            return `<div class="tag-suggestion-item" data-tag="${tag}">${highlighted}</div>`;
+        }).join('');
+
+        this.elements.tagSuggestions.style.display = 'block';
+
+        // Bind clicks
+        this.elements.tagSuggestions.querySelectorAll('.tag-suggestion-item').forEach(item => {
+            item.addEventListener('click', () => {
+                this.selectTag(item.dataset.tag);
+            });
+        });
+    },
+
+    hideTagSuggestions() {
+        if (this.elements.tagSuggestions) {
+            this.elements.tagSuggestions.style.display = 'none';
+        }
+    },
+
+    selectTag(tag) {
+        const currentVal = this.elements.tagsInput.value;
+        const parts = currentVal.split(',');
+        parts.pop(); // Remove partial
+        parts.push(' ' + tag); // Add clicked tag
+        this.elements.tagsInput.value = parts.join(',').trim() + ', ';
+        this.elements.tagsInput.focus();
+        this.hideTagSuggestions();
+    },
+
+    // ==========================================
+    // Bulk Actions / Selection Mode
+    // ==========================================
+    toggleSelectionMode() {
+        this.isSelectionMode = !this.isSelectionMode;
+        if (!this.selectedArticles) this.selectedArticles = new Set();
+
+        // Toggle UI class
+        this.elements.articlesGrid.classList.toggle('selection-mode', this.isSelectionMode);
+        document.querySelector('.header-actions').classList.toggle('selection-active', this.isSelectionMode);
+
+        // Toggle button state
+        if (this.elements.btnToggleSelection) {
+            this.elements.btnToggleSelection.classList.toggle('active', this.isSelectionMode);
+        }
+
+        if (!this.isSelectionMode) {
+            // Clear selection when exiting mode
+            this.selectedArticles.clear();
+            this.updateSelectionUI();
+
+            this.selectedArticles.clear();
+            this.updateSelectionUI();
+
+            // Remove 'selected' class from all cards
+            document.querySelectorAll('.article-card').forEach(card => card.classList.remove('selected'));
+        }
+
+        // Re-render to bind/unbind correct events
+        this.renderArticles();
+    },
+
+    toggleSelection(articleId) {
+        if (!this.isSelectionMode) return;
+
+        if (this.selectedArticles.has(articleId)) {
+            this.selectedArticles.delete(articleId);
+            const card = document.querySelector(`.article-card[data-id="${articleId}"]`);
+            if (card) card.classList.remove('selected');
+        } else {
+            this.selectedArticles.add(articleId);
+            const card = document.querySelector(`.article-card[data-id="${articleId}"]`);
+            if (card) card.classList.add('selected');
+        }
+
+        this.updateSelectionUI();
+    },
+
+    updateSelectionUI() {
+        if (this.elements.selectionCount) {
+            this.elements.selectionCount.textContent = `${this.selectedArticles.size} selected`;
+        }
+    },
+
+    async batchArchive() {
+        if (this.selectedArticles.size === 0) return;
+
+        if (confirm(`Archive ${this.selectedArticles.size} articles?`)) {
+            const ids = Array.from(this.selectedArticles);
+
+            // Process sequentially or Promise.all - doing sequential for safety/simplicity with existing methods
+            // Actually Storage.updateArticle is async.
+            // Let's manually upate storage to avoid N renders.
+
+            const articles = Storage.getArticles();
+            let changed = false;
+
+            ids.forEach(id => {
+                const article = articles.find(a => a.id === id);
+                if (article) {
+                    article.status = 'archived';
+                    article.archivedAt = new Date().toISOString();
+                    changed = true;
+                }
+            });
+
+            if (changed) {
+                Storage.saveArticles(articles);
+                // Also update firebase if needed (one by one for now)
+                if (FirebaseService.isConfigured) {
+                    ids.forEach(id => FirebaseService.updateArticle(id, { status: 'archived', archivedAt: new Date().toISOString() }));
+                }
+
+                // Clear selection and re-render
+                this.toggleSelectionMode();
+                this.renderArticles();
+                this.updateStats();
+            }
+        }
+    },
+
+    async batchDelete() {
+        if (this.selectedArticles.size === 0) return;
+
+        if (confirm(`Permanently delete ${this.selectedArticles.size} articles?`)) {
+            const ids = Array.from(this.selectedArticles);
+
+            const articles = Storage.getArticles();
+            const newArticles = articles.filter(a => !this.selectedArticles.has(a.id));
+
+            Storage.saveArticles(newArticles);
+
+            if (FirebaseService.isConfigured) {
+                ids.forEach(id => FirebaseService.deleteArticle(id));
+            }
+
+            this.toggleSelectionMode();
+            this.updateStats();
+        }
+    },
+
+    handleSurpriseMe() {
+        const articles = Storage.getArticles();
+        let unreadArticles = articles.filter(a => !a.isRead && !a.isArchived);
+
+        if (unreadArticles.length === 0) {
+            // Fallback to any non-archived article if all are read
+            unreadArticles = articles.filter(a => !a.isArchived);
+        }
+
+        if (unreadArticles.length === 0) {
+            alert('No articles found to read!');
+            return;
+        }
+
+        const randomIndex = Math.floor(Math.random() * unreadArticles.length);
+        const randomArticle = unreadArticles[randomIndex];
+
+        // Open reader via hash routing
+        window.location.hash = `#read/${randomArticle.id}`;
+    },
+
     updateTagsFilter() {
         const articles = this.cachedArticles.length > 0 ? this.cachedArticles : Storage.getArticles();
 
@@ -1618,8 +1904,21 @@ const UI = {
             excerptHtml = `<p class="card-excerpt placeholder">No preview available</p>`;
         }
 
+        const isSelected = this.isSelectionMode && this.selectedArticles.has(article.id);
+        const selectedClass = isSelected ? 'selected' : '';
+        const selectModeClass = this.isSelectionMode ? 'selection-mode' : '';
+
+        // Checkbox HTML
+        const checkboxHtml = `
+            <div class="card-checkbox">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+        `;
+
         return `
-            <article class="article-card ${cardClass} ${progressClass}" data-id="${article.id}">
+            <article class="article-card ${cardClass} ${progressClass} ${selectModeClass} ${selectedClass}" 
+                data-id="${article.id}">
+                ${checkboxHtml}
                 ${thumbnailHtml}
                 ${readProgress > 0 ? `<div class="card-progress-bar"><div class="progress-fill" style="width: ${readProgress}%"></div></div>` : ''}
                 <div class="card-header">
@@ -1729,6 +2028,18 @@ const UI = {
                 this.handleToggleArchive(btn.dataset.id);
             });
         });
+
+        // Selection Mode Clicks
+        if (this.isSelectionMode) {
+            document.querySelectorAll('.article-card').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    // Prevent other actions (like Reader opening)
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.toggleSelection(card.dataset.id);
+                });
+            });
+        }
 
         // Lazy load images with Intersection Observer
         this.setupLazyLoading();

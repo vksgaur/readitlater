@@ -155,7 +155,6 @@ const Reader = {
                                     <div class="settings-row">
                                         <button class="font-family-btn active" data-font="serif">Serif</button>
                                         <button class="font-family-btn" data-font="sans">Sans</button>
-                                        <button class="font-family-btn" data-font="mono">Mono</button>
                                     </div>
                                 </div>
                                 <div class="settings-group">
