@@ -172,7 +172,47 @@ body {
 }
 
 .folders-section {
+    /* flex: 1;  Removed to allow tags section to fit */
+    margin-bottom: var(--spacing-md);
+}
+
+.tags-section {
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
     flex: 1;
+    /* Let tags take remaining space */
+    overflow-y: auto;
+}
+
+.tag-list-sidebar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: var(--spacing-sm) 0;
+}
+
+.sidebar-tag {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.75rem;
+    padding: 3px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 100px;
+    /* Pill shape */
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.sidebar-tag:hover {
+    background: var(--bg-card);
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
 
 .section-header {
