@@ -249,6 +249,8 @@ body {
     position: relative;
     width: 100%;
     max-width: 400px;
+    flex-shrink: 1;
+    min-width: 200px;
 }
 
 .search-box input {
@@ -282,6 +284,7 @@ body {
     display: flex;
     align-items: center;
     gap: var(--spacing-md);
+    flex-shrink: 0;
 }
 
 .main-content {
@@ -901,7 +904,34 @@ body {
 .card-status {
     display: flex;
     align-items: center;
+    margin-bottom: var(--spacing-sm);
     gap: var(--spacing-sm);
+}
+
+.card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+}
+
+.tag {
+    font-size: 0.7rem;
+    padding: 3px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+    font-weight: 500;
+}
+
+.tag:hover {
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    background: rgba(var(--accent-primary-rgb), 0.05);
+    /* Ensure rgb var exists or uses fallback */
 }
 
 .status-badge {

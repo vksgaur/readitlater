@@ -191,46 +191,71 @@ const FirebaseService = {
 
         UI.showLoading();
 
+        // Safety Timeout: Force hide loading if sync hangs
+        const loadTimeout = setTimeout(() => {
+            if (document.querySelector('.loading-state').style.display !== 'none') {
+                console.warn('Loading timed out - forcing local fallback');
+                UI.hideLoading();
+                const localArticles = LocalStorage.getArticles();
+                if (localArticles.length > 0) {
+                    UI.renderArticles(localArticles);
+                } else {
+                    // Just show empty state
+                    UI.renderArticles([]);
+                }
+                UI.updateSyncStatus('local');
+            }
+        }, 8000);
+
         unsubscribeSnapshot = articlesRef
             .orderBy('dateAdded', 'desc')
             .onSnapshot(snapshot => {
+                clearTimeout(loadTimeout); // Clear timeout on success
                 console.log('Snapshot received, document count:', snapshot.size);
 
-                const articles = [];
-                if (!snapshot.empty) {
-                    snapshot.forEach(doc => {
-                        const data = doc.data();
-                        articles.push({
-                            id: doc.id,
-                            ...data,
-                            // Ensure defaults for critical fields
-                            folderId: data.folderId || null,
-                            isArchived: data.isArchived || false,
-                            isRead: data.isRead || false,
-                            tags: data.tags || [],
-                            dateAdded: data.dateAdded || new Date().toISOString()
+                try {
+                    const articles = [];
+                    if (!snapshot.empty) {
+                        snapshot.forEach(doc => {
+                            const data = doc.data();
+                            articles.push({
+                                id: doc.id,
+                                ...data,
+                                // Ensure defaults for critical fields
+                                folderId: data.folderId || null,
+                                isArchived: data.isArchived || false,
+                                isRead: data.isRead || false,
+                                tags: data.tags || [],
+                                dateAdded: data.dateAdded || new Date().toISOString()
+                            });
                         });
-                    });
-                } else {
-                    console.log('No articles found in cloud.');
+                    } else {
+                        console.log('No articles found in cloud.');
+                    }
+
+                    console.log('Articles loaded:', articles.length);
+
+                    // Also save to localStorage for offline access
+                    LocalStorage.saveArticles(articles);
+
+                    UI.hideLoading();
+                    UI.renderArticles(articles);
+                    UI.updateSyncStatus('synced');
+                } catch (err) {
+                    console.error("Error processing snapshot:", err);
+                    UI.hideLoading();
+                    UI.updateSyncStatus('error');
                 }
-
-                console.log('Articles loaded:', articles.length);
-
-                // Also save to localStorage for offline access
-                LocalStorage.saveArticles(articles);
-
-                UI.hideLoading();
-                UI.renderArticles(articles);
-                UI.updateSyncStatus('synced');
             }, error => {
+                clearTimeout(loadTimeout);
                 console.error('Snapshot error:', error);
                 UI.updateSyncStatus('error');
                 UI.hideLoading();
 
                 // If permission denied or other error, fallback to local but warn user
                 if (error.code === 'permission-denied') {
-                    alert('Access denied. Please check your account permissions.');
+                    // alert('Access denied. Please check your account permissions.');
+                    console.log("Access denied");
                 }
 
                 const localArticles = LocalStorage.getArticles();
@@ -1501,6 +1526,7 @@ const UI = {
     // Called from Firebase real-time listener
     renderArticles(articles) {
         this.cachedArticles = articles;
+        this.renderSidebarTags();
         this.applyFilters();
     },
 
@@ -1533,49 +1559,44 @@ const UI = {
     },
 
     // New: Render Global Tag Cloud
-    renderTagCloud() {
-        // Collect all tags and their counts
+    // Render Tags in Sidebar
+    renderSidebarTags() {
+        if (!this.cachedArticles) return;
+
         const tagCounts = {};
         this.cachedArticles.forEach(article => {
             if (article.tags && Array.isArray(article.tags)) {
                 article.tags.forEach(tag => {
-                    const normalizedTag = tag.toLowerCase().trim();
-                    if (normalizedTag) {
-                        tagCounts[normalizedTag] = (tagCounts[normalizedTag] || 0) + 1;
+                    const normalized = tag.toLowerCase().trim();
+                    // Store display name (first one encountered or most frequent - simple first/last here)
+                    if (normalized) {
+                        if (!tagCounts[normalized]) tagCounts[normalized] = { name: tag.trim(), count: 0 };
+                        tagCounts[normalized].count++;
                     }
                 });
             }
         });
 
-        // Find container (we might need to create it if it doesn't exist yet in HTML, 
-        // but for now let's assume we render it into the filters section or a new sidebar)
-        // Let's repurpose the 'tagsFilterContainer' for this visual cloud
-        const container = document.getElementById('tagsFilterContainer');
+        const container = document.getElementById('tagListSidebar');
         if (!container) return;
 
-        const tags = Object.keys(tagCounts);
+        const tags = Object.values(tagCounts);
         if (tags.length === 0) {
-            container.innerHTML = '<span class="no-tags">No tags yet</span>';
+            container.innerHTML = '<span class="no-tags" style="padding: 0 1rem; font-size: 0.8rem; opacity: 0.6;">No tags created yet</span>';
             return;
         }
 
-        // Sort by count (desc) then name
-        tags.sort((a, b) => tagCounts[b] - tagCounts[a] || a.localeCompare(b));
+        tags.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
-        container.innerHTML = tags.map(tag => {
-            const count = tagCounts[tag];
-            // Simple weighting: 1 to 3 classes based on count
-            const weightClass = count > 5 ? 'tag-large' : (count > 2 ? 'tag-medium' : 'tag-small');
-            const isActive = this.currentTagFilter === tag ? 'active' : '';
+        container.innerHTML = tags.map(t => `
+            <span class="sidebar-tag" onclick="UI.filterByTag('${t.name}')">#${t.name}</span>
+        `).join('');
+    },
 
-            return `
-                <button class="tag-cloud-item ${weightClass} ${isActive}" 
-                        onclick="UI.filterByTag('${tag}')">
-                    #${tag}
-                    <span class="tag-count">${count}</span>
-                </button>
-            `;
-        }).join('');
+    // Legacy or Filter bar cloud (optional)
+    renderTagCloud() {
+        // ... (kept if needed, but sidebar is primary now)
+        this.renderSidebarTags(); // Sync mechanics
     },
 
     // New: Filter by specific tag (called from Cloud or Reader)
