@@ -179,7 +179,7 @@ const FirebaseService = {
     },
 
     // Subscribe to real-time updates
-    subscribeToArticles() {
+    async subscribeToArticles() {
         const articlesRef = this.getArticlesRef();
         if (!articlesRef) return;
 
@@ -191,76 +191,78 @@ const FirebaseService = {
 
         UI.showLoading();
 
-        // Safety Timeout: Force hide loading if sync hangs
-        const loadTimeout = setTimeout(() => {
-            if (document.querySelector('.loading-state').style.display !== 'none') {
-                console.warn('Loading timed out - forcing local fallback');
-                UI.hideLoading();
-                const localArticles = LocalStorage.getArticles();
-                if (localArticles.length > 0) {
-                    UI.renderArticles(localArticles);
-                } else {
-                    // Just show empty state
-                    UI.renderArticles([]);
-                }
-                UI.updateSyncStatus('local');
+        // 1. Direct Fetch First (For Speed/Reliability on new devices)
+        try {
+            console.log('Performing direct initial fetch...');
+            let snapshot;
+            try {
+                // Try ordered fetch first
+                snapshot = await articlesRef.orderBy('dateAdded', 'desc').get();
+            } catch (indexError) {
+                console.warn('Ordered fetch failed (possible index issue). Trying unordered limit fallback.', indexError);
+                // Fallback: Just get latest 50 unordered if index fails
+                snapshot = await articlesRef.limit(50).get();
             }
-        }, 8000);
 
+            this.processSnapshot(snapshot);
+            console.log('Initial fetch complete.');
+        } catch (fetchError) {
+            console.error('Initial direct fetch failed:', fetchError);
+            // Fallback to local if fetch completely dies (offline)
+            const localArticles = LocalStorage.getArticles();
+            if (localArticles.length > 0) UI.renderArticles(localArticles);
+            UI.hideLoading();
+        }
+
+        // 2. Attach Listener for Real-time Updates (Future changes)
         unsubscribeSnapshot = articlesRef
             .orderBy('dateAdded', 'desc')
             .onSnapshot(snapshot => {
-                clearTimeout(loadTimeout); // Clear timeout on success
-                console.log('Snapshot received, document count:', snapshot.size);
-
-                try {
-                    const articles = [];
-                    if (!snapshot.empty) {
-                        snapshot.forEach(doc => {
-                            const data = doc.data();
-                            articles.push({
-                                id: doc.id,
-                                ...data,
-                                // Ensure defaults for critical fields
-                                folderId: data.folderId || null,
-                                isArchived: data.isArchived || false,
-                                isRead: data.isRead || false,
-                                tags: data.tags || [],
-                                dateAdded: data.dateAdded || new Date().toISOString()
-                            });
-                        });
-                    } else {
-                        console.log('No articles found in cloud.');
-                    }
-
-                    console.log('Articles loaded:', articles.length);
-
-                    // Also save to localStorage for offline access
-                    LocalStorage.saveArticles(articles);
-
-                    UI.hideLoading();
-                    UI.renderArticles(articles);
-                    UI.updateSyncStatus('synced');
-                } catch (err) {
-                    console.error("Error processing snapshot:", err);
-                    UI.hideLoading();
-                    UI.updateSyncStatus('error');
-                }
+                console.log('Real-time update received');
+                this.processSnapshot(snapshot);
             }, error => {
-                clearTimeout(loadTimeout);
-                console.error('Snapshot error:', error);
+                console.error('Real-time listener error:', error);
                 UI.updateSyncStatus('error');
-                UI.hideLoading();
-
-                // If permission denied or other error, fallback to local but warn user
-                if (error.code === 'permission-denied') {
-                    // alert('Access denied. Please check your account permissions.');
-                    console.log("Access denied");
-                }
-
-                const localArticles = LocalStorage.getArticles();
-                UI.renderArticles(localArticles);
             });
+    },
+
+    // Helper to process any snapshot (from get() or onSnapshot())
+    processSnapshot(snapshot) {
+        try {
+            const articles = [];
+            if (!snapshot.empty) {
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    articles.push({
+                        id: doc.id,
+                        ...data,
+                        // Ensure defaults for critical fields
+                        folderId: data.folderId || null,
+                        isArchived: data.isArchived || false,
+                        isRead: data.isRead || false,
+                        tags: data.tags || [],
+                        dateAdded: data.dateAdded || new Date().toISOString()
+                    });
+                });
+            } else {
+                console.log('No articles found in snapshot.');
+            }
+
+            console.log('Articles processed:', articles.length);
+
+            // Sort if unordered (fallback scenario)
+            articles.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+
+            // Also save to localStorage for offline access
+            LocalStorage.saveArticles(articles);
+
+            UI.hideLoading();
+            UI.renderArticles(articles);
+            UI.updateSyncStatus('synced');
+        } catch (err) {
+            console.error("Error processing snapshot data:", err);
+            UI.updateSyncStatus('error');
+        }
     },
 
     // Add article to Firestore
