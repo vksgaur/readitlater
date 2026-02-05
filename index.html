@@ -22,8 +22,8 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=phase8.3">
-    <link rel="stylesheet" href="reader.css?v=phase8.3">
+    <link rel="stylesheet" href="style.css?v=phase8.4">
+    <link rel="stylesheet" href="reader.css?v=phase8.4">
 </head>
 
 <body>
@@ -362,11 +362,29 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
+    <!-- Debug Console (Temporary) -->
+    <div id="debug-console" style="
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 150px;
+        background: rgba(0,0,0,0.9);
+        color: lime;
+        font-family: monospace;
+        font-size: 10px;
+        padding: 10px;
+        overflow-y: auto;
+        z-index: 9999;
+        display: none; /* Hidden by default, toggled by app.js if needed or error occurs */
+        border-top: 1px solid #333;
+    "></div>
+
     <!-- App Scripts -->
     <script src="firebase-config.js"></script>
     <script src="content-fetcher.js"></script>
-    <script src="app.js?v=phase8.3"></script>
-    <script src="reader.js?v=phase8.3"></script>
+    <script src="app.js?v=phase8.4"></script>
+    <script src="reader.js?v=phase8.4"></script>
 
     <!-- Service Worker Registration -->
     <script>
