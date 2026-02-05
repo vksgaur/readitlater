@@ -180,6 +180,20 @@ const FirebaseService = {
 
     // Subscribe to real-time updates
     async subscribeToArticles() {
+        // --- VISUAL DEBUGGING HELPERS ---
+        const debugEl = document.getElementById('debug-console');
+        const logToScreen = (msg) => {
+            console.log('[SYNC DEBUG]', msg);
+            if (debugEl) {
+                if (msg.toLowerCase().includes('error') || msg.toLowerCase().includes('timeout')) {
+                    debugEl.style.display = 'block';
+                }
+                const time = new Date().toLocaleTimeString();
+                debugEl.innerHTML += `<div>[${time}] ${msg}</div>`;
+                debugEl.scrollTop = debugEl.scrollHeight;
+            }
+        };
+
         const articlesRef = this.getArticlesRef();
         if (!articlesRef) return;
 
