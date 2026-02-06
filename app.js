@@ -12,6 +12,7 @@ let db = null;
 let auth = null;
 let currentUser = null;
 let unsubscribeSnapshot = null;
+let isInitialSync = true; // Track if this is the first sync after sign-in
 
 // ============================================
 // Firebase Initialization
@@ -132,6 +133,9 @@ const FirebaseService = {
                 // Store current user's UID for future comparison
                 localStorage.setItem('readlater_uid', user.uid);
 
+                // Mark this as initial sync - cloud will be source of truth
+                isInitialSync = true;
+
                 UI.showUserProfile(user);
                 UI.updateSyncStatus('syncing'); // Show syncing until articles load
                 this.subscribeToArticles();
@@ -181,6 +185,31 @@ const FirebaseService = {
         } catch (error) {
             console.error('Sign out error:', error);
         }
+    },
+
+    // Force a fresh sync from cloud (clears local cache)
+    async forceSync() {
+        if (!currentUser || !this.isConfigured) {
+            console.log('Cannot force sync - not signed in');
+            return;
+        }
+
+        console.log('Force sync requested - refreshing from cloud...');
+        UI.updateSyncStatus('syncing');
+
+        // Clear local cache to ensure fresh data
+        localStorage.removeItem(STORAGE_KEY);
+
+        // Mark as initial sync so cloud becomes source of truth
+        isInitialSync = true;
+
+        // Re-subscribe (this will fetch fresh data)
+        if (unsubscribeSnapshot) {
+            unsubscribeSnapshot();
+            unsubscribeSnapshot = null;
+        }
+
+        await this.subscribeToArticles();
     },
 
     // Get Firestore collection reference for current user
@@ -302,19 +331,30 @@ const FirebaseService = {
 
             console.log('Cloud articles received:', cloudArticles.length);
 
-            // Get current local articles
-            const localArticles = LocalStorage.getArticles();
-            console.log('Local articles found:', localArticles.length);
+            let finalArticles;
 
-            // Merge cloud and local articles with conflict resolution
-            const mergedArticles = mergeArticles(cloudArticles, localArticles);
-            console.log('Merged articles count:', mergedArticles.length);
+            if (isInitialSync) {
+                // INITIAL SYNC: Cloud is the source of truth
+                // This ensures all browsers show the same data after sign-in
+                console.log('Initial sync - using cloud as source of truth');
+                finalArticles = cloudArticles.sort((a, b) =>
+                    new Date(b.dateAdded) - new Date(a.dateAdded)
+                );
+                isInitialSync = false; // Mark initial sync as complete
+            } else {
+                // SUBSEQUENT UPDATES: Merge to preserve any offline changes
+                const localArticles = LocalStorage.getArticles();
+                console.log('Real-time update - merging with local:', localArticles.length);
+                finalArticles = mergeArticles(cloudArticles, localArticles);
+            }
 
-            // Save merged result to localStorage for offline access
-            LocalStorage.saveArticles(mergedArticles);
+            console.log('Final articles count:', finalArticles.length);
+
+            // Save to localStorage for offline access
+            LocalStorage.saveArticles(finalArticles);
 
             UI.hideLoading();
-            UI.renderArticles(mergedArticles);
+            UI.renderArticles(finalArticles);
             UI.updateSyncStatus('synced');
         } catch (err) {
             console.error("Error processing snapshot data:", err);
@@ -1152,6 +1192,15 @@ const UI = {
     },
 
     bindEvents() {
+        // Sync Status Click - Force refresh from cloud
+        if (this.elements.syncStatus) {
+            this.elements.syncStatus.addEventListener('click', () => {
+                if (currentUser && FirebaseService.isConfigured) {
+                    FirebaseService.forceSync();
+                }
+            });
+        }
+
         // Selection Mode Events
         if (this.elements.btnToggleSelection) {
             this.elements.btnToggleSelection.addEventListener('click', () => this.toggleSelectionMode());
