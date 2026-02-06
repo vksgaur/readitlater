@@ -51,6 +51,17 @@
             </div>
         </header>
 
+        <!-- Sign-in Required Notice (shown when not authenticated) -->
+        <div class="signin-notice" id="signinNotice">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <span>Sign in with Google to save articles to your Margins account</span>
+        </div>
+
         <!-- Page Info -->
         <div class="page-info" id="pageInfo">
             <div class="page-url" id="pageUrl">Loading...</div>
@@ -63,22 +74,9 @@
                 <input type="text" id="titleInput" placeholder="Article title..." required>
             </div>
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="categorySelect">Category</label>
-                    <select id="categorySelect">
-                        <option value="poem">Poem</option>
-                        <option value="short-story">Short Story</option>
-                        <option value="finance">Finance</option>
-                        <option value="deep">Deep</option>
-                        <option value="other">Other</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label for="tagsInput">Tags</label>
-                    <input type="text" id="tagsInput" placeholder="e.g., tech, ai">
-                </div>
+            <div class="form-group">
+                <label for="tagsInput">Tags <span class="optional">(optional)</span></label>
+                <input type="text" id="tagsInput" placeholder="e.g., tech, ai, reading">
             </div>
 
             <button type="submit" class="btn-save" id="saveBtn">

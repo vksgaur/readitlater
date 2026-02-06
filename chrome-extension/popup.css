@@ -148,6 +148,23 @@ body {
     color: var(--error-color);
 }
 
+/* Sign-in Notice */
+.signin-notice {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: rgba(240, 180, 41, 0.1);
+    border-bottom: 1px solid rgba(240, 180, 41, 0.2);
+    color: var(--warning-color);
+    font-size: 12px;
+}
+
+.signin-notice svg {
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
 /* Page Info */
 .page-info {
     padding: 12px 16px;
@@ -184,6 +201,12 @@ body {
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+.form-group label .optional {
+    font-weight: 400;
+    text-transform: none;
+    color: var(--text-muted);
 }
 
 .form-group input,

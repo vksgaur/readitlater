@@ -9,9 +9,7 @@ import { firebaseConfig, isFirebaseConfigured, isOAuthConfigured, GOOGLE_CLIENT_
 // Constants
 // ============================================
 
-const STORAGE_KEY = 'readlater_articles'; // Must match main app's storage key
 const AUTH_STORAGE_KEY = 'margins_auth';
-const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`;
 
 // Google OAuth configuration
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -36,11 +34,11 @@ const elements = {
     userName: null,
     pageUrl: null,
     titleInput: null,
-    categorySelect: null,
     tagsInput: null,
     saveForm: null,
     saveBtn: null,
-    statusMessage: null
+    statusMessage: null,
+    signinNotice: null
 };
 
 // ============================================
@@ -61,11 +59,11 @@ function cacheElements() {
     elements.userName = document.getElementById('userName');
     elements.pageUrl = document.getElementById('pageUrl');
     elements.titleInput = document.getElementById('titleInput');
-    elements.categorySelect = document.getElementById('categorySelect');
     elements.tagsInput = document.getElementById('tagsInput');
     elements.saveForm = document.getElementById('saveForm');
     elements.saveBtn = document.getElementById('saveBtn');
     elements.statusMessage = document.getElementById('statusMessage');
+    elements.signinNotice = document.getElementById('signinNotice');
 }
 
 function bindEvents() {
@@ -81,7 +79,7 @@ async function initializePopup() {
     // Load saved auth state
     await loadAuthState();
 
-    // Update UI
+    // Update UI based on auth state
     updateAuthUI();
 }
 
@@ -94,7 +92,7 @@ async function getCurrentTab() {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab) {
             currentTab = tab;
-            elements.pageUrl.textContent = tab.url;
+            elements.pageUrl.textContent = truncateUrl(tab.url, 50);
             elements.titleInput.value = tab.title || '';
 
             // Try to execute script to get description and image
@@ -125,6 +123,11 @@ async function getCurrentTab() {
     }
 }
 
+function truncateUrl(url, maxLength) {
+    if (url.length <= maxLength) return url;
+    return url.substring(0, maxLength - 3) + '...';
+}
+
 // ============================================
 // Authentication using launchWebAuthFlow
 // ============================================
@@ -137,18 +140,88 @@ async function loadAuthState() {
             currentUser = authData.user;
             idToken = authData.idToken;
 
-            // Check if token is expired
+            // Check if token is expired (with 5 min buffer)
             if (idToken && authData.expiresAt) {
-                if (Date.now() > authData.expiresAt) {
-                    // Token expired, need to sign in again
-                    currentUser = null;
-                    idToken = null;
-                    await saveAuthState(null);
+                const bufferTime = 5 * 60 * 1000; // 5 minutes
+                if (Date.now() > (authData.expiresAt - bufferTime)) {
+                    console.log('Token expired or expiring soon, attempting refresh...');
+                    // Try to refresh the token silently
+                    const refreshed = await tryRefreshToken();
+                    if (!refreshed) {
+                        // Token refresh failed, clear auth state
+                        currentUser = null;
+                        idToken = null;
+                        await saveAuthState(null);
+                    }
                 }
             }
         }
     } catch (error) {
         console.error('Error loading auth state:', error);
+    }
+}
+
+async function tryRefreshToken() {
+    try {
+        // Try silent auth flow (non-interactive)
+        const redirectUrl = chrome.identity.getRedirectURL();
+        const nonce = generateNonce();
+
+        const authParams = new URLSearchParams({
+            client_id: GOOGLE_CLIENT_ID,
+            response_type: 'id_token token',
+            redirect_uri: redirectUrl,
+            scope: 'openid email profile',
+            nonce: nonce,
+            prompt: 'none' // Silent refresh - no UI
+        });
+
+        const authUrl = `${GOOGLE_AUTH_URL}?${authParams.toString()}`;
+
+        const responseUrl = await new Promise((resolve, reject) => {
+            chrome.identity.launchWebAuthFlow(
+                { url: authUrl, interactive: false },
+                (response) => {
+                    if (chrome.runtime.lastError || !response) {
+                        reject(new Error(chrome.runtime.lastError?.message || 'Silent refresh failed'));
+                    } else {
+                        resolve(response);
+                    }
+                }
+            );
+        });
+
+        // Parse and process the response
+        const hashParams = new URLSearchParams(responseUrl.split('#')[1]);
+        const googleIdToken = hashParams.get('id_token');
+
+        if (!googleIdToken) {
+            return false;
+        }
+
+        // Exchange for Firebase token
+        const firebaseAuthResult = await signInWithGoogle(googleIdToken);
+
+        idToken = firebaseAuthResult.idToken;
+        currentUser = {
+            uid: firebaseAuthResult.localId,
+            email: firebaseAuthResult.email,
+            name: firebaseAuthResult.displayName,
+            picture: firebaseAuthResult.photoUrl
+        };
+
+        const expiresIn = firebaseAuthResult.expiresIn ? parseInt(firebaseAuthResult.expiresIn) : 3600;
+        await saveAuthState({
+            user: currentUser,
+            idToken: idToken,
+            expiresAt: Date.now() + (expiresIn * 1000)
+        });
+
+        console.log('Token refreshed successfully');
+        return true;
+    } catch (error) {
+        console.log('Silent token refresh failed:', error.message);
+        return false;
     }
 }
 
@@ -165,14 +238,28 @@ async function saveAuthState(authData) {
 }
 
 function updateAuthUI() {
-    if (currentUser) {
+    const isSignedIn = currentUser && idToken;
+
+    if (isSignedIn) {
+        // User is signed in
         elements.signInBtn.style.display = 'none';
         elements.userProfile.style.display = 'flex';
         elements.userAvatar.src = currentUser.picture || '';
         elements.userName.textContent = currentUser.name?.split(' ')[0] || currentUser.email?.split('@')[0] || 'User';
+
+        // Hide sign-in notice, enable save button
+        elements.signinNotice.style.display = 'none';
+        elements.saveBtn.disabled = false;
+        elements.saveBtn.querySelector('.btn-text').textContent = 'Save Article';
     } else {
+        // User is NOT signed in
         elements.signInBtn.style.display = 'flex';
         elements.userProfile.style.display = 'none';
+
+        // Show sign-in notice, disable save button
+        elements.signinNotice.style.display = 'flex';
+        elements.saveBtn.disabled = true;
+        elements.saveBtn.querySelector('.btn-text').textContent = 'Sign in to Save';
     }
 }
 
@@ -183,22 +270,18 @@ async function handleSignIn() {
     }
 
     if (!isOAuthConfigured()) {
-        showStatus('OAuth not configured. See firebase-config.js', 'error');
+        showStatus('OAuth not configured', 'error');
         return;
     }
 
     const originalText = elements.signInBtn.innerHTML;
-    elements.signInBtn.textContent = 'Opening...';
+    elements.signInBtn.textContent = 'Signing in...';
     elements.signInBtn.disabled = true;
 
     try {
         // Build Google OAuth URL
         const redirectUrl = chrome.identity.getRedirectURL();
-
-        // DEBUG: Show the redirect URL that must be added to Google Cloud Console
-        console.log('=== REDIRECT URL FOR GOOGLE CLOUD CONSOLE ===');
-        console.log(redirectUrl);
-        console.log('==============================================');
+        console.log('Redirect URL:', redirectUrl);
 
         const nonce = generateNonce();
 
@@ -232,14 +315,13 @@ async function handleSignIn() {
         // Parse the response URL
         const hashParams = new URLSearchParams(responseUrl.split('#')[1]);
         const googleIdToken = hashParams.get('id_token');
-        const accessToken = hashParams.get('access_token');
 
         if (!googleIdToken) {
             throw new Error('No ID token received');
         }
 
         // Exchange Google token for Firebase token
-        const firebaseAuthResult = await signInWithGoogle(googleIdToken, accessToken);
+        const firebaseAuthResult = await signInWithGoogle(googleIdToken);
 
         idToken = firebaseAuthResult.idToken;
         currentUser = {
@@ -249,7 +331,7 @@ async function handleSignIn() {
             picture: firebaseAuthResult.photoUrl
         };
 
-        // Save auth state with expiration (default 1 hour if not provided)
+        // Save auth state with expiration
         const expiresIn = firebaseAuthResult.expiresIn ? parseInt(firebaseAuthResult.expiresIn) : 3600;
         await saveAuthState({
             user: currentUser,
@@ -258,12 +340,12 @@ async function handleSignIn() {
         });
 
         updateAuthUI();
-        showStatus('Signed in!', 'success');
+        showStatus('Signed in successfully!', 'success');
 
     } catch (error) {
         console.error('Sign in error:', error);
         if (!error.message.includes('canceled') && !error.message.includes('closed')) {
-            showStatus('Sign in failed', 'error');
+            showStatus('Sign in failed: ' + error.message, 'error');
         }
     } finally {
         elements.signInBtn.innerHTML = originalText;
@@ -271,7 +353,7 @@ async function handleSignIn() {
     }
 }
 
-async function signInWithGoogle(googleIdToken, accessToken) {
+async function signInWithGoogle(googleIdToken) {
     // Use Firebase Auth REST API to sign in with Google credential
     const response = await fetch(
         `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${firebaseConfig.apiKey}`,
@@ -314,6 +396,12 @@ async function handleSignOut() {
 async function handleSaveArticle(e) {
     e.preventDefault();
 
+    // Double-check auth state
+    if (!currentUser || !idToken) {
+        showStatus('Please sign in first', 'error');
+        return;
+    }
+
     if (!currentTab?.url) {
         showStatus('Unable to get page URL', 'error');
         return;
@@ -321,7 +409,6 @@ async function handleSaveArticle(e) {
 
     const url = currentTab.url;
     const title = elements.titleInput.value.trim() || extractDomain(url);
-    const category = elements.categorySelect.value;
     const tagsStr = elements.tagsInput.value.trim();
     const tags = tagsStr ? tagsStr.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) : [];
 
@@ -331,17 +418,17 @@ async function handleSaveArticle(e) {
         id: generateId(),
         url: url,
         title: title,
-        category: category,
+        category: 'other', // Default category
         tags: tags,
         isRead: false,
         isFavorite: false,
         isArchived: false,
         dateAdded: now,
-        lastModified: now, // For conflict resolution across devices
-        thumbnail: currentTab.meta?.image || '', // Use grabbed image
-        excerpt: currentTab.meta?.description || '', // Use grabbed description
+        lastModified: now,
+        thumbnail: currentTab.meta?.image || '',
+        excerpt: currentTab.meta?.description || '',
         readingTime: 0,
-        content: '', // Content fetching happens in app usually, or we can fetch here
+        content: '',
         highlights: [],
         readProgress: 0,
         folderId: null,
@@ -353,47 +440,44 @@ async function handleSaveArticle(e) {
     setLoading(true);
 
     try {
-        if (currentUser && idToken) {
-            // Save to Firebase Firestore
-            await saveToFirestore(article);
-            showStatus('✓ Saved to cloud!', 'success');
-        } else {
-            // Save to pending queue for later sync
-            await saveToPending(article);
-            showStatus('✓ Saved locally (sign in to sync)', 'warning');
-        }
-
-        // Notify background to update badge
-        chrome.runtime.sendMessage({ type: 'UPDATE_BADGE' });
+        // Save directly to Firebase Firestore
+        await saveToFirestore(article);
+        showStatus('Saved to Margins!', 'success');
 
         // Close popup after short delay
         setTimeout(() => {
             window.close();
-        }, 1200);
+        }, 1000);
 
     } catch (error) {
         console.error('Error saving article:', error);
 
         // Check if it's an auth error
         if (error.message.includes('401') || error.message.includes('403') || error.message.includes('UNAUTHENTICATED')) {
-            // Token expired, save locally
+            // Token expired, try to refresh
+            const refreshed = await tryRefreshToken();
+            if (refreshed) {
+                // Retry save with new token
+                try {
+                    await saveToFirestore(article);
+                    showStatus('Saved to Margins!', 'success');
+                    setTimeout(() => window.close(), 1000);
+                    return;
+                } catch (retryError) {
+                    console.error('Retry failed:', retryError);
+                }
+            }
+
+            // Refresh failed, need to sign in again
             currentUser = null;
             idToken = null;
             await saveAuthState(null);
             updateAuthUI();
-
-            await saveToPending(article);
-            showStatus('Session expired. Saved locally.', 'warning');
+            showStatus('Session expired. Please sign in again.', 'error');
         } else if (error.message.includes('already')) {
             showStatus('Article already saved!', 'warning');
         } else {
-            // Try to save locally as fallback
-            try {
-                await saveToPending(article);
-                showStatus('Saved locally (sync later)', 'warning');
-            } catch {
-                showStatus('Failed to save', 'error');
-            }
+            showStatus('Failed to save: ' + error.message, 'error');
         }
     } finally {
         setLoading(false);
@@ -411,7 +495,7 @@ async function saveToFirestore(article) {
             isFavorite: { booleanValue: article.isFavorite },
             isArchived: { booleanValue: article.isArchived },
             dateAdded: { stringValue: article.dateAdded },
-            lastModified: { stringValue: article.lastModified || new Date().toISOString() },
+            lastModified: { stringValue: article.lastModified },
             tags: {
                 arrayValue: {
                     values: article.tags.length > 0
@@ -420,7 +504,7 @@ async function saveToFirestore(article) {
                 }
             },
             thumbnail: { stringValue: article.thumbnail || '' },
-            excerpt: { stringValue: article.excerpt || '' }, // Save excerpt
+            excerpt: { stringValue: article.excerpt || '' },
             readingTime: { integerValue: String(article.readingTime || 0) },
             content: { stringValue: article.content || '' },
             highlights: { arrayValue: { values: [] } },
@@ -432,16 +516,11 @@ async function saveToFirestore(article) {
         }
     };
 
-    // Use the :commit endpoint to create/update document (more compatible with SDK)
+    // Use the :commit endpoint
     const commitUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents:commit`;
-
     const docPath = `projects/${firebaseConfig.projectId}/databases/(default)/documents/users/${currentUser.uid}/articles/${article.id}`;
 
-    // DEBUG: Log the user ID and path being used
-    console.log('=== SAVING TO FIRESTORE ===');
-    console.log('User UID:', currentUser.uid);
-    console.log('Document path:', docPath);
-    console.log('===========================');
+    console.log('Saving to Firestore:', { uid: currentUser.uid, articleId: article.id });
 
     const commitBody = {
         writes: [{
@@ -467,31 +546,6 @@ async function saveToFirestore(article) {
     }
 
     return await response.json();
-}
-
-async function saveToPending(article) {
-    return new Promise((resolve, reject) => {
-        chrome.storage.local.get(STORAGE_KEY, (result) => {
-            const articles = result[STORAGE_KEY] || [];
-
-            // Check for duplicate
-            const exists = articles.some(a => a.url === article.url);
-            if (exists) {
-                reject(new Error('Article already saved'));
-                return;
-            }
-
-            articles.unshift(article);
-
-            chrome.storage.local.set({ [STORAGE_KEY]: articles }, () => {
-                if (chrome.runtime.lastError) {
-                    reject(new Error(chrome.runtime.lastError.message));
-                } else {
-                    resolve();
-                }
-            });
-        });
-    });
 }
 
 // ============================================
@@ -527,6 +581,7 @@ function showStatus(message, type = 'success') {
     elements.statusMessage.textContent = message;
     elements.statusMessage.className = `status-message show ${type}`;
 
+    // Auto-hide non-success messages after 4 seconds
     if (type !== 'success') {
         setTimeout(() => {
             elements.statusMessage.className = 'status-message';
