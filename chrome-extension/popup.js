@@ -9,7 +9,7 @@ import { firebaseConfig, isFirebaseConfigured, isOAuthConfigured, GOOGLE_CLIENT_
 // Constants
 // ============================================
 
-const STORAGE_KEY = 'margins_pending_articles';
+const STORAGE_KEY = 'readlater_articles'; // Must match main app's storage key
 const AUTH_STORAGE_KEY = 'margins_auth';
 const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`;
 
@@ -326,6 +326,7 @@ async function handleSaveArticle(e) {
     const tags = tagsStr ? tagsStr.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) : [];
 
     // Create article object
+    const now = new Date().toISOString();
     const article = {
         id: generateId(),
         url: url,
@@ -335,7 +336,8 @@ async function handleSaveArticle(e) {
         isRead: false,
         isFavorite: false,
         isArchived: false,
-        dateAdded: new Date().toISOString(),
+        dateAdded: now,
+        lastModified: now, // For conflict resolution across devices
         thumbnail: currentTab.meta?.image || '', // Use grabbed image
         excerpt: currentTab.meta?.description || '', // Use grabbed description
         readingTime: 0,
@@ -409,6 +411,7 @@ async function saveToFirestore(article) {
             isFavorite: { booleanValue: article.isFavorite },
             isArchived: { booleanValue: article.isArchived },
             dateAdded: { stringValue: article.dateAdded },
+            lastModified: { stringValue: article.lastModified || new Date().toISOString() },
             tags: {
                 arrayValue: {
                     values: article.tags.length > 0

@@ -120,10 +120,20 @@ const FirebaseService = {
 
     setupAuthListener() {
         auth.onAuthStateChanged(user => {
+            const previousUid = localStorage.getItem('readlater_uid');
             currentUser = user;
+
             if (user) {
+                // Check if a DIFFERENT user is signing in (account switch)
+                if (previousUid && previousUid !== user.uid) {
+                    console.log('Account switch detected, clearing previous user data');
+                    localStorage.removeItem(STORAGE_KEY);
+                }
+                // Store current user's UID for future comparison
+                localStorage.setItem('readlater_uid', user.uid);
+
                 UI.showUserProfile(user);
-                UI.updateSyncStatus('synced');
+                UI.updateSyncStatus('syncing'); // Show syncing until articles load
                 this.subscribeToArticles();
             } else {
                 // User signed out
@@ -136,8 +146,9 @@ const FirebaseService = {
                     unsubscribeSnapshot = null;
                 }
 
-                // Privacy: Clear local articles when signing out to prevent data leaking between users
+                // Privacy: Clear local articles and UID when signing out
                 localStorage.removeItem(STORAGE_KEY);
+                localStorage.removeItem('readlater_uid');
 
                 // Clear UI or render empty state
                 UI.renderArticles([]);
@@ -205,26 +216,53 @@ const FirebaseService = {
 
         UI.showLoading();
 
-        // 1. Direct Fetch First (For Speed/Reliability on new devices)
+        // Start a loading timeout to detect stuck states (8 seconds)
+        const loadingTimeout = setTimeout(() => {
+            console.warn('Loading taking too long, showing cached data...');
+            UI.updateSyncStatus('slow');
+            const localArticles = LocalStorage.getArticles();
+            if (localArticles.length > 0) {
+                UI.renderArticles(localArticles);
+                UI.hideLoading();
+            }
+        }, 8000);
+
+        // 1. Direct Fetch with Timeout (For Speed/Reliability on new devices)
         try {
             console.log('Performing direct initial fetch...');
-            let snapshot;
-            try {
-                // Try ordered fetch first
-                snapshot = await articlesRef.orderBy('dateAdded', 'desc').get();
-            } catch (indexError) {
-                console.warn('Ordered fetch failed (possible index issue). Trying unordered limit fallback.', indexError);
-                // Fallback: Just get latest 50 unordered if index fails
-                snapshot = await articlesRef.limit(50).get();
-            }
 
+            // Create fetch promise with ordered/unordered fallback
+            const fetchPromise = (async () => {
+                try {
+                    return await articlesRef.orderBy('dateAdded', 'desc').get();
+                } catch (indexError) {
+                    console.warn('Ordered fetch failed, trying unordered:', indexError);
+                    return await articlesRef.limit(100).get();
+                }
+            })();
+
+            // Create timeout promise (15 seconds hard limit)
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Fetch timeout after 15s')), 15000)
+            );
+
+            // Race between fetch and timeout
+            const snapshot = await Promise.race([fetchPromise, timeoutPromise]);
+            clearTimeout(loadingTimeout);
             this.processSnapshot(snapshot);
             console.log('Initial fetch complete.');
+
         } catch (fetchError) {
-            console.error('Initial direct fetch failed:', fetchError);
-            // Fallback to local if fetch completely dies (offline)
+            clearTimeout(loadingTimeout);
+            console.error('Initial fetch failed:', fetchError);
+            // Fallback to local if fetch fails/times out
             const localArticles = LocalStorage.getArticles();
-            if (localArticles.length > 0) UI.renderArticles(localArticles);
+            if (localArticles.length > 0) {
+                UI.renderArticles(localArticles);
+                UI.updateSyncStatus('offline');
+            } else {
+                UI.updateSyncStatus('error');
+            }
             UI.hideLoading();
         }
 
@@ -243,11 +281,11 @@ const FirebaseService = {
     // Helper to process any snapshot (from get() or onSnapshot())
     processSnapshot(snapshot) {
         try {
-            const articles = [];
+            const cloudArticles = [];
             if (!snapshot.empty) {
                 snapshot.forEach(doc => {
                     const data = doc.data();
-                    articles.push({
+                    cloudArticles.push({
                         id: doc.id,
                         ...data,
                         // Ensure defaults for critical fields
@@ -259,19 +297,24 @@ const FirebaseService = {
                     });
                 });
             } else {
-                console.log('No articles found in snapshot.');
+                console.log('No articles found in cloud.');
             }
 
-            console.log('Articles processed:', articles.length);
+            console.log('Cloud articles received:', cloudArticles.length);
 
-            // Sort if unordered (fallback scenario)
-            articles.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+            // Get current local articles
+            const localArticles = LocalStorage.getArticles();
+            console.log('Local articles found:', localArticles.length);
 
-            // Also save to localStorage for offline access
-            LocalStorage.saveArticles(articles);
+            // Merge cloud and local articles with conflict resolution
+            const mergedArticles = mergeArticles(cloudArticles, localArticles);
+            console.log('Merged articles count:', mergedArticles.length);
+
+            // Save merged result to localStorage for offline access
+            LocalStorage.saveArticles(mergedArticles);
 
             UI.hideLoading();
-            UI.renderArticles(articles);
+            UI.renderArticles(mergedArticles);
             UI.updateSyncStatus('synced');
         } catch (err) {
             console.error("Error processing snapshot data:", err);
@@ -292,7 +335,8 @@ const FirebaseService = {
                 category: article.category,
                 isRead: article.isRead,
                 dateAdded: article.dateAdded,
-                // Additional fields that were missing
+                lastModified: article.lastModified || new Date().toISOString(),
+                // Additional fields
                 tags: article.tags || [],
                 isFavorite: article.isFavorite || false,
                 isArchived: article.isArchived || false,
@@ -353,6 +397,67 @@ const FirebaseService = {
 };
 
 // ============================================
+// Article Merge Utility
+// ============================================
+
+/**
+ * Merges cloud and local articles with conflict resolution.
+ * Uses timestamps to determine which version wins for each article.
+ * Local-only articles (not in cloud) are preserved and queued for sync.
+ */
+function mergeArticles(cloudArticles, localArticles) {
+    const merged = new Map();
+    const localOnlyArticles = [];
+
+    // Index cloud articles by ID
+    cloudArticles.forEach(article => {
+        merged.set(article.id, { ...article, _source: 'cloud' });
+    });
+
+    // Process local articles
+    localArticles.forEach(localArticle => {
+        const cloudArticle = merged.get(localArticle.id);
+
+        if (!cloudArticle) {
+            // Article exists locally but not in cloud - keep it and mark for sync
+            localOnlyArticles.push({ ...localArticle, _pendingSync: true });
+            merged.set(localArticle.id, { ...localArticle, _pendingSync: true });
+        } else {
+            // Article exists in both - compare timestamps
+            const cloudTime = new Date(cloudArticle.lastModified || cloudArticle.dateAdded || 0).getTime();
+            const localTime = new Date(localArticle.lastModified || localArticle.dateAdded || 0).getTime();
+
+            if (localTime > cloudTime) {
+                // Local is newer - keep local version and mark for sync
+                merged.set(localArticle.id, { ...localArticle, _pendingSync: true });
+            }
+            // Otherwise cloud version wins (already in merged map)
+        }
+    });
+
+    // Convert map to array and sort by dateAdded
+    const result = Array.from(merged.values())
+        .map(article => {
+            // Clean up internal tracking fields before returning
+            const { _source, ...cleanArticle } = article;
+            return cleanArticle;
+        })
+        .sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+
+    // Queue local-only articles for background sync
+    if (localOnlyArticles.length > 0 && currentUser && FirebaseService.isConfigured) {
+        console.log(`Syncing ${localOnlyArticles.length} local-only articles to cloud...`);
+        localOnlyArticles.forEach(article => {
+            FirebaseService.addArticle(article).catch(err => {
+                console.warn('Failed to sync local article to cloud:', err);
+            });
+        });
+    }
+
+    return result;
+}
+
+// ============================================
 // Local Storage (Fallback & Offline Cache)
 // ============================================
 
@@ -387,7 +492,12 @@ const LocalStorage = {
         const articles = this.getArticles();
         const index = articles.findIndex(a => a.id === id);
         if (index !== -1) {
-            articles[index] = { ...articles[index], ...updates };
+            // Add lastModified timestamp for conflict resolution
+            articles[index] = {
+                ...articles[index],
+                ...updates,
+                lastModified: new Date().toISOString()
+            };
             return this.saveArticles(articles);
         }
         return false;
@@ -410,13 +520,19 @@ const Storage = {
     },
 
     async addArticle(article) {
+        // Add lastModified timestamp for conflict resolution
+        const articleWithTimestamp = {
+            ...article,
+            lastModified: article.lastModified || new Date().toISOString()
+        };
+
         // Always save to localStorage first
-        LocalStorage.addArticle(article);
+        LocalStorage.addArticle(articleWithTimestamp);
 
         // If signed in, also save to Firestore
         if (currentUser && FirebaseService.isConfigured) {
             try {
-                await FirebaseService.addArticle(article);
+                await FirebaseService.addArticle(articleWithTimestamp);
             } catch (e) {
                 console.warn('Background sync add error:', e);
             }
@@ -425,13 +541,19 @@ const Storage = {
     },
 
     async updateArticle(id, updates) {
+        // Add lastModified timestamp for conflict resolution
+        const updatesWithTimestamp = {
+            ...updates,
+            lastModified: new Date().toISOString()
+        };
+
         // Always update localStorage first
-        LocalStorage.updateArticle(id, updates);
+        LocalStorage.updateArticle(id, updatesWithTimestamp);
 
         // If signed in, also update Firestore
         if (currentUser && FirebaseService.isConfigured) {
             try {
-                const success = await FirebaseService.updateArticle(id, updates);
+                const success = await FirebaseService.updateArticle(id, updatesWithTimestamp);
                 if (!success) {
                     console.warn('Background sync with cloud failed, but saved locally.');
                 }
@@ -455,6 +577,11 @@ const Storage = {
             }
         }
         return true;
+    },
+
+    // Save all articles to local storage (for local-only batch operations)
+    saveArticles(articles) {
+        return LocalStorage.saveArticles(articles);
     }
 };
 
@@ -1802,7 +1929,7 @@ const UI = {
             ids.forEach(id => {
                 const article = articles.find(a => a.id === id);
                 if (article) {
-                    article.status = 'archived';
+                    article.isArchived = true;
                     article.archivedAt = new Date().toISOString();
                     changed = true;
                 }
@@ -1812,7 +1939,7 @@ const UI = {
                 Storage.saveArticles(articles);
                 // Also update firebase if needed (one by one for now)
                 if (FirebaseService.isConfigured) {
-                    ids.forEach(id => FirebaseService.updateArticle(id, { status: 'archived', archivedAt: new Date().toISOString() }));
+                    ids.forEach(id => FirebaseService.updateArticle(id, { isArchived: true, archivedAt: new Date().toISOString() }));
                 }
 
                 // Clear selection and re-render

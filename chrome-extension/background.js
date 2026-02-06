@@ -49,6 +49,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         // We'll save the basic info and let the main app fetch metadata if needed later
 
         // Create article with default category
+        const now = new Date().toISOString();
         const article = {
             id: generateId(),
             url: url,
@@ -58,7 +59,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             isRead: false,
             isFavorite: false,
             isArchived: false,
-            dateAdded: new Date().toISOString(),
+            dateAdded: now,
+            lastModified: now, // For conflict resolution across devices
             thumbnail: '',
             readingTime: 0,
             content: '',
@@ -148,6 +150,7 @@ async function saveToFirestore(article, user, idToken) {
             isFavorite: { booleanValue: article.isFavorite },
             isArchived: { booleanValue: article.isArchived },
             dateAdded: { stringValue: article.dateAdded },
+            lastModified: { stringValue: article.lastModified || new Date().toISOString() },
             tags: { arrayValue: { values: [] } }, // Empty tags for context menu save
             thumbnail: { stringValue: article.thumbnail },
             readingTime: { integerValue: String(article.readingTime || 0) },
